@@ -77,6 +77,7 @@ foreach ( $raw_posts as $post ) {
         'imgFull' => $img_full ?: $img_card,
         'imgW'    => $img_w,
         'imgH'    => $img_h,
+        'video'   => get_post_meta( $post->ID, 'portfolio_video', true ) ?: '',
     ];
 }
 
@@ -186,6 +187,39 @@ $site_name  = get_bloginfo( 'name' );
       font-size: 19px; font-weight: 600;
       color: rgba(255,255,255,0.82);
       line-height: 1.3; letter-spacing: -0.02em;
+    }
+
+    /* ── Play-knop op kaart ── */
+    .card-play {
+      position: absolute;
+      top: 10px; right: 10px;
+      width: 34px; height: 34px;
+      background: rgba(0,0,0,0.55);
+      backdrop-filter: blur(6px);
+      -webkit-backdrop-filter: blur(6px);
+      border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      color: rgba(255,255,255,0.85);
+      font-size: 11px;
+      pointer-events: none;
+      transition: background 0.2s, transform 0.2s;
+    }
+    .card:hover .card-play {
+      background: rgba(255,255,255,0.18);
+      transform: scale(1.12);
+    }
+
+    /* ── Video in overlay ── */
+    #overlay-video {
+      display: none;
+      width: 100%;
+      aspect-ratio: 16 / 9;
+      background: #000;
+    }
+    #overlay-video iframe,
+    #overlay-video video {
+      width: 100%; height: 100%;
+      display: block; border: none;
     }
 
     /* ── Overlay ── */
@@ -320,6 +354,7 @@ $site_name  = get_bloginfo( 'name' );
   <div id="overlay">
     <button id="overlay-close" aria-label="Close">✕</button>
     <div id="overlay-panel">
+      <div id="overlay-video"></div>
       <img id="overlay-img" src="" alt="">
       <div id="overlay-colour-block"><span class="block-title"></span></div>
       <div id="overlay-info">
@@ -426,6 +461,14 @@ $site_name  = get_bloginfo( 'name' );
          </div>`;
     }
 
+    // Voeg play-indicator toe als het item een video heeft
+    if (item.video) {
+      const play = document.createElement('div');
+      play.className = 'card-play';
+      play.textContent = '▶';
+      el.appendChild(play);
+    }
+
     el._cardData = {
       type:    item.img ? 'img' : 'colour',
       title:   item.title,
@@ -434,6 +477,7 @@ $site_name  = get_bloginfo( 'name' );
       year:    item.year,
       imgFull: item.imgFull || item.img,
       accent:  ACCENTS[ item.id % ACCENTS.length ],
+      video:   item.video || '',
     };
 
     return el;
@@ -504,6 +548,7 @@ $site_name  = get_bloginfo( 'name' );
 
   /* ── Overlay ── */
   const overlayEl     = document.getElementById('overlay');
+  const overlayVideo  = document.getElementById('overlay-video');
   const overlayImg    = document.getElementById('overlay-img');
   const overlayColour = document.getElementById('overlay-colour-block');
   const overlayCat    = document.getElementById('overlay-cat');
@@ -511,17 +556,40 @@ $site_name  = get_bloginfo( 'name' );
   const overlayTitle  = document.getElementById('overlay-title');
   const overlayDesc   = document.getElementById('overlay-desc');
 
+  // Zet een video-URL om naar een embed-HTML-string
+  function videoEmbedHtml(url) {
+    const yt = url.match(/(?:youtube\.com\/(?:watch\?v=|embed\/|shorts\/)|youtu\.be\/)([a-zA-Z0-9_-]{11})/);
+    if (yt) {
+      return `<iframe src="https://www.youtube.com/embed/${yt[1]}?autoplay=1&rel=0&modestbranding=1"
+                      allow="autoplay; fullscreen" allowfullscreen></iframe>`;
+    }
+    const vimeo = url.match(/vimeo\.com\/(\d+)/);
+    if (vimeo) {
+      return `<iframe src="https://player.vimeo.com/video/${vimeo[1]}?autoplay=1&title=0&byline=0"
+                      allow="autoplay; fullscreen" allowfullscreen></iframe>`;
+    }
+    // Directe videobestand (mp4, webm, etc.)
+    return `<video src="${esc(url)}" controls autoplay playsinline></video>`;
+  }
+
   function openOverlay(d) {
-    if (d.type === 'img' && d.imgFull) {
-      overlayImg.src            = d.imgFull;
-      overlayImg.style.display  = 'block';
-      overlayColour.style.display = 'none';
+    // Standaard alles verbergen
+    overlayVideo.style.display  = 'none';
+    overlayImg.style.display    = 'none';
+    overlayColour.style.display = 'none';
+
+    if (d.video) {
+      overlayVideo.innerHTML    = videoEmbedHtml(d.video);
+      overlayVideo.style.display = 'block';
+    } else if (d.type === 'img' && d.imgFull) {
+      overlayImg.src           = d.imgFull;
+      overlayImg.style.display = 'block';
     } else {
-      overlayImg.style.display    = 'none';
       overlayColour.style.display = 'flex';
       overlayColour.style.background = d.accent || '#161616';
       overlayColour.querySelector('.block-title').textContent = d.title;
     }
+
     overlayCat.textContent   = d.cat;
     overlayYear.textContent  = d.year;
     overlayTitle.textContent = d.title;
@@ -531,6 +599,7 @@ $site_name  = get_bloginfo( 'name' );
 
   function closeOverlay() {
     overlayEl.classList.remove('open');
+    overlayVideo.innerHTML = ''; // stop video bij sluiten
   }
 
   overlayEl.addEventListener('click', e => {

@@ -2,13 +2,13 @@
 /**
  * Plugin Name: Portfolio Canvas
  * Description: Infinite-pan portfolio canvas. Add items via Portfolio → Add New in the admin, then set any Page's template to "Portfolio Canvas".
- * Version:     1.2.0
+ * Version:     1.3.0
  * License:     GPL-2.0+
  */
 
 defined( 'ABSPATH' ) || exit;
 
-define( 'PORTFOLIO_CANVAS_VERSION', '1.2.0' );
+define( 'PORTFOLIO_CANVAS_VERSION', '1.3.0' );
 define( 'PORTFOLIO_CANVAS_GITHUB_REPO', 'lieuwe89/portfolio-canvas-plugin' );
 
 /* ── Auto-updater via GitHub Releases ───────────────── */
@@ -108,18 +108,20 @@ add_action( 'init', function () {
 
 } );
 
-/* ── 2. Year meta field ──────────────────────────── */
+/* ── 2. Meta fields (year + video) ───────────────── */
 
 add_action( 'init', function () {
-    register_post_meta( 'portfolio_item', 'portfolio_year', [
-        'show_in_rest'      => true,
-        'single'            => true,
-        'type'              => 'string',
-        'sanitize_callback' => 'sanitize_text_field',
-        'auth_callback'     => function () {
-            return current_user_can( 'edit_posts' );
-        },
-    ] );
+    foreach ( [ 'portfolio_year', 'portfolio_video' ] as $key ) {
+        register_post_meta( 'portfolio_item', $key, [
+            'show_in_rest'      => true,
+            'single'            => true,
+            'type'              => 'string',
+            'sanitize_callback' => $key === 'portfolio_video' ? 'esc_url_raw' : 'sanitize_text_field',
+            'auth_callback'     => function () {
+                return current_user_can( 'edit_posts' );
+            },
+        ] );
+    }
 } );
 
 /* ── 3. Classic-editor meta box ──────────────────── */
@@ -130,7 +132,8 @@ add_action( 'add_meta_boxes', function () {
         'Portfolio Details',
         function ( $post ) {
             wp_nonce_field( 'portfolio_save', '_portfolio_nonce' );
-            $year = get_post_meta( $post->ID, 'portfolio_year', true );
+            $year  = get_post_meta( $post->ID, 'portfolio_year',  true );
+            $video = get_post_meta( $post->ID, 'portfolio_video', true );
             ?>
             <table class="form-table" style="margin:0">
                 <tr>
@@ -146,12 +149,29 @@ add_action( 'add_meta_boxes', function () {
                                style="width:100px">
                     </td>
                 </tr>
+                <tr>
+                    <th style="padding:8px 0">
+                        <label for="portfolio_video">Video URL</label>
+                    </th>
+                    <td style="padding:4px 0">
+                        <input type="url"
+                               id="portfolio_video"
+                               name="portfolio_video"
+                               value="<?php echo esc_attr( $video ); ?>"
+                               placeholder="https://youtube.com/watch?v=… of Vimeo-link"
+                               style="width:100%">
+                        <p class="description" style="margin-top:4px">
+                            YouTube, Vimeo of directe .mp4-link. Gebruik de Featured Image als thumbnail.
+                        </p>
+                    </td>
+                </tr>
             </table>
             <p class="description" style="margin-top:10px">
-                <strong>Featured Image</strong> → card image<br>
-                <strong>Excerpt</strong> → description shown in overlay<br>
-                <strong>Title</strong> → project name<br>
-                <strong>Year</strong> → shown on card &amp; in overlay
+                <strong>Featured Image</strong> → kaartafbeelding / thumbnail<br>
+                <strong>Excerpt</strong> → beschrijving in overlay<br>
+                <strong>Title</strong> → projectnaam<br>
+                <strong>Year</strong> → zichtbaar op kaart &amp; in overlay<br>
+                <strong>Video URL</strong> → speelt af bij klikken
             </p>
             <?php
         },
@@ -175,6 +195,13 @@ add_action( 'save_post_portfolio_item', function ( $post_id ) {
             $post_id,
             'portfolio_year',
             sanitize_text_field( wp_unslash( $_POST['portfolio_year'] ) )
+        );
+    }
+    if ( isset( $_POST['portfolio_video'] ) ) {
+        update_post_meta(
+            $post_id,
+            'portfolio_video',
+            esc_url_raw( wp_unslash( $_POST['portfolio_video'] ) )
         );
     }
 } );
