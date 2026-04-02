@@ -201,6 +201,22 @@ $site_name  = get_bloginfo( 'name' );
       line-height: 1.3; letter-spacing: -0.02em;
     }
 
+    /* ── Instagram-kaart ── */
+    .card-instagram .ig-body {
+      height: 220px;
+      background: linear-gradient(135deg, #f09433 0%, #e6683c 25%, #dc2743 50%, #cc2366 75%, #bc1888 100%);
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center; gap: 10px;
+    }
+    .card-instagram .ig-icon {
+      width: 38px; height: 38px; opacity: 0.9;
+    }
+    .card-instagram .ig-label {
+      font-size: 12px; font-weight: 600;
+      color: rgba(255,255,255,0.85); letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+
     /* ── Play-knop op kaart ── */
     .card-play {
       position: absolute;
@@ -451,10 +467,30 @@ $site_name  = get_bloginfo( 'name' );
     const el   = document.createElement('div');
     const imgH = cardImgH(item);
 
+    const isInstagram = item.video && /instagram\.com/.test(item.video);
+
     if (item.img) {
       el.className = 'card card-img';
       el.innerHTML =
         `<img src="${esc(item.img)}" style="height:${imgH}px" loading="lazy" draggable="false">
+         <div class="card-info">
+           <div class="meta-row">
+             <span class="cat">${esc(item.cat)}</span>
+             <span class="year">${esc(item.year)}</span>
+           </div>
+           <div class="title">${esc(item.title)}</div>
+         </div>`;
+    } else if (isInstagram) {
+      el.className = 'card card-instagram';
+      el.innerHTML =
+        `<div class="ig-body">
+           <svg class="ig-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+             <rect x="2" y="2" width="20" height="20" rx="5" ry="5" stroke="white" stroke-width="1.8" fill="none"/>
+             <circle cx="12" cy="12" r="4.5" stroke="white" stroke-width="1.8" fill="none"/>
+             <circle cx="17.5" cy="6.5" r="1" fill="white"/>
+           </svg>
+           <span class="ig-label">Instagram</span>
+         </div>
          <div class="card-info">
            <div class="meta-row">
              <span class="cat">${esc(item.cat)}</span>
@@ -580,8 +616,19 @@ $site_name  = get_bloginfo( 'name' );
       return `<iframe src="https://player.vimeo.com/video/${vimeo[1]}?autoplay=1&title=0&byline=0"
                       allow="autoplay; fullscreen" allowfullscreen></iframe>`;
     }
+    const ig = url.match(/instagram\.com\/(?:p|reel|tv)\/([a-zA-Z0-9_-]+)/);
+    if (ig) {
+      return `<iframe src="https://www.instagram.com/p/${ig[1]}/embed/"
+                      scrolling="no" allowtransparency="true"
+                      style="width:100%;height:100%;border:none"></iframe>`;
+    }
     // Directe videobestand (mp4, webm, etc.)
     return `<video src="${esc(url)}" controls autoplay playsinline></video>`;
+  }
+
+  // Bepaal of een URL een Instagram-post is
+  function isInstagramUrl(url) {
+    return url && /instagram\.com\/(?:p|reel|tv)\//.test(url);
   }
 
   function openOverlay(d) {
@@ -591,8 +638,11 @@ $site_name  = get_bloginfo( 'name' );
     overlayColour.style.display = 'none';
 
     if (d.video) {
-      overlayVideo.innerHTML    = videoEmbedHtml(d.video);
-      overlayVideo.style.display = 'block';
+      overlayVideo.innerHTML = videoEmbedHtml(d.video);
+      // Instagram-posts zijn vierkant/portret, geen 16:9
+      overlayVideo.style.aspectRatio = isInstagramUrl(d.video) ? 'unset' : '16 / 9';
+      overlayVideo.style.minHeight   = isInstagramUrl(d.video) ? '540px'  : 'unset';
+      overlayVideo.style.display     = 'block';
     } else if (d.type === 'img' && d.imgFull) {
       overlayImg.src           = d.imgFull;
       overlayImg.style.display = 'block';
