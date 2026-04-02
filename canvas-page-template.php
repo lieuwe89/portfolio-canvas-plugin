@@ -183,6 +183,9 @@ $site_name  = get_bloginfo( 'name' );
       -webkit-user-drag: none;
       object-fit: cover;
     }
+    .card-direct-video video {
+      object-fit: contain;
+    }
     .card-info {
       padding: 11px 14px 14px;
       display: flex; flex-direction: column; gap: 3px;
@@ -497,11 +500,26 @@ $site_name  = get_bloginfo( 'name' );
   }
 
   // Bepaal welk WP-item op positie (col, row) hoort — herhaalt cyclisch
+  // Gebruik een per-(kolom, blok) geschudde volgorde zodat elk item
+  // precies één keer voorkomt vóór er herhaald wordt, en aangrenzende
+  // kolommen een andere volgorde krijgen (minder zichtbare herhaling).
   function itemAtPos(col, row) {
-    const h = ( Math.abs(col * 73856093) ^ Math.abs(row < 0
-      ? (-row) * 19349663 + 99999
-      :   row  * 19349663) ) >>> 0;
-    return WP_ITEMS[ h % WP_ITEMS.length ];
+    const n = WP_ITEMS.length;
+    if (n === 1) return WP_ITEMS[0];
+    // Zet negatieve rijen om naar een apart bereik zodat ze niet botsen
+    const absRow = row >= 0 ? row : -row + 100000;
+    const block  = Math.floor(absRow / n);
+    const pos    = absRow % n;
+    // Seeded Fisher-Yates shuffle voor (col, block)
+    let s = ((col * 999983) ^ (block * 1234567) ^ 0xDEADBEEF) >>> 0;
+    const rng = () => { s = Math.imul(1664525, s) + 1013904223 | 0; return (s >>> 0) / 4294967296; };
+    const idx = Array.from({length: n}, (_, i) => i);
+    for (let i = n - 1; i > 0; i--) {
+      const j = Math.floor(rng() * (i + 1));
+      [idx[i], idx[j]] = [idx[j], idx[i]];
+    }
+    // Verschuif startpositie per kolom om horizontale herhaling te verminderen
+    return WP_ITEMS[ idx[ (pos + col) % n ] ];
   }
 
   // Seeded RNG voor de kolom-stagger
@@ -517,7 +535,7 @@ $site_name  = get_bloginfo( 'name' );
 
   function totalCardH(item) {
     if (item.img) return cardImgH(item) + INFO_H;
-    if (!item.img && isDirectVideo(item.video)) return 180 + INFO_H;
+    if (!item.img && isDirectVideo(item.video)) return 200 + INFO_H;
     return 160;
   }
 
@@ -547,9 +565,9 @@ $site_name  = get_bloginfo( 'name' );
            <div class="title">${esc(item.title)}</div>
          </div>`;
     } else if (isDirectVideo(item.video)) {
-      el.className = 'card card-img';
+      el.className = 'card card-img card-direct-video';
       el.innerHTML =
-        `<video src="${esc(item.video)}" style="height:180px" autoplay muted loop playsinline draggable="false"></video>
+        `<video src="${esc(item.video)}" style="height:200px" autoplay muted loop playsinline draggable="false"></video>
          <div class="card-info">
            <div class="meta-row">
              <span class="cat">${esc(item.cat)}</span>
