@@ -8,7 +8,7 @@
 
 defined( 'ABSPATH' ) || exit;
 
-define( 'PORTFOLIO_CANVAS_VERSION', '1.5.1' );
+define( 'PORTFOLIO_CANVAS_VERSION', '1.6.0' );
 define( 'PORTFOLIO_CANVAS_GITHUB_REPO', 'lieuwe89/portfolio-canvas-plugin' );
 
 /* ── Auto-updater via GitHub Releases ───────────────── */
@@ -321,7 +321,7 @@ add_action( 'init', function () {
 
 } );
 
-/* ── 2. Meta fields (year + video) ───────────────── */
+/* ── 2. Meta fields (year + video + gallery) ─────── */
 
 add_action( 'init', function () {
     foreach ( [ 'portfolio_year', 'portfolio_video' ] as $key ) {
@@ -335,6 +335,24 @@ add_action( 'init', function () {
             },
         ] );
     }
+
+    // Gallery: kommagescheiden attachment-ID's
+    register_post_meta( 'portfolio_item', 'portfolio_gallery', [
+        'show_in_rest'      => false,
+        'single'            => true,
+        'type'              => 'string',
+        'sanitize_callback' => 'sanitize_text_field',
+        'auth_callback'     => function () {
+            return current_user_can( 'edit_posts' );
+        },
+    ] );
+} );
+
+// Media-uploader beschikbaar maken op portfolio_item edit-pagina's
+add_action( 'admin_enqueue_scripts', function ( $hook ) {
+    if ( ! in_array( $hook, [ 'post.php', 'post-new.php' ], true ) ) return;
+    if ( get_post_type() !== 'portfolio_item' ) return;
+    wp_enqueue_media();
 } );
 
 /* ── 3. Classic-editor meta box ──────────────────── */
@@ -394,6 +412,108 @@ add_action( 'add_meta_boxes', function () {
     );
 } );
 
+/* ── 3b. Gallery meta box ────────────────────────── */
+
+add_action( 'add_meta_boxes', function () {
+    add_meta_box(
+        'portfolio_gallery',
+        'Galerij afbeeldingen',
+        function ( $post ) {
+            wp_nonce_field( 'portfolio_gallery_save', '_portfolio_gallery_nonce' );
+            $raw      = get_post_meta( $post->ID, 'portfolio_gallery', true );
+            $ids      = $raw ? array_filter( array_map( 'absint', explode( ',', $raw ) ) ) : [];
+            $thumbs   = [];
+            foreach ( $ids as $id ) {
+                $src = wp_get_attachment_image_src( $id, 'thumbnail' );
+                if ( $src ) {
+                    $thumbs[] = [ 'id' => $id, 'thumb' => $src[0] ];
+                }
+            }
+            ?>
+            <p class="description" style="margin-bottom:10px">
+                Voeg extra afbeeldingen toe. In de overlay opent een galerij wanneer je op de afbeelding klikt.
+            </p>
+            <ul id="pc-gallery-list" style="display:flex;flex-wrap:wrap;gap:8px;list-style:none;padding:0;margin:0 0 12px">
+                <?php foreach ( $thumbs as $t ) : ?>
+                <li data-id="<?php echo esc_attr( $t['id'] ); ?>" style="position:relative">
+                    <img src="<?php echo esc_url( $t['thumb'] ); ?>"
+                         style="width:72px;height:72px;object-fit:cover;border-radius:4px;display:block">
+                    <button type="button" class="pc-remove-img"
+                            style="position:absolute;top:-7px;right:-7px;width:20px;height:20px;
+                                   background:#dc3232;color:#fff;border:none;border-radius:50%;
+                                   cursor:pointer;font-size:13px;line-height:20px;padding:0;
+                                   text-align:center">×</button>
+                </li>
+                <?php endforeach; ?>
+            </ul>
+            <input type="hidden" name="portfolio_gallery_ids" id="pc-gallery-ids"
+                   value="<?php echo esc_attr( implode( ',', $ids ) ); ?>">
+            <button type="button" id="pc-add-gallery" class="button">
+                Afbeeldingen toevoegen / bewerken
+            </button>
+            <script>
+            jQuery(function($){
+                var frame;
+                var $list  = $('#pc-gallery-list');
+                var $input = $('#pc-gallery-ids');
+
+                function getIds(){
+                    return $input.val() ? $input.val().split(',').map(Number).filter(Boolean) : [];
+                }
+                function setIds(ids){ $input.val(ids.join(',')); }
+
+                $('#pc-add-gallery').on('click', function(){
+                    if(frame){ frame.open(); return; }
+                    frame = wp.media({
+                        title:  'Galerij afbeeldingen selecteren',
+                        button: { text: 'Toevoegen aan galerij' },
+                        multiple: true
+                    });
+                    frame.on('open', function(){
+                        var sel = frame.state().get('selection');
+                        getIds().forEach(function(id){
+                            var att = wp.media.attachment(id);
+                            att.fetch();
+                            sel.add(att ? [att] : []);
+                        });
+                    });
+                    frame.on('select', function(){
+                        var attachments = frame.state().get('selection');
+                        $list.empty();
+                        var ids = [];
+                        attachments.each(function(att){
+                            ids.push(att.id);
+                            var sizes = att.attributes.sizes || {};
+                            var thumb = (sizes.thumbnail||{}).url || att.attributes.url;
+                            $list.append(
+                                '<li data-id="'+att.id+'" style="position:relative">' +
+                                '<img src="'+thumb+'" style="width:72px;height:72px;object-fit:cover;border-radius:4px;display:block">' +
+                                '<button type="button" class="pc-remove-img" style="position:absolute;top:-7px;right:-7px;'+
+                                'width:20px;height:20px;background:#dc3232;color:#fff;border:none;border-radius:50%;'+
+                                'cursor:pointer;font-size:13px;line-height:20px;padding:0;text-align:center">×</button>' +
+                                '</li>'
+                            );
+                        });
+                        setIds(ids);
+                    });
+                    frame.open();
+                });
+
+                $list.on('click', '.pc-remove-img', function(){
+                    var id = parseInt($(this).closest('li').data('id'));
+                    setIds(getIds().filter(function(i){ return i !== id; }));
+                    $(this).closest('li').remove();
+                });
+            });
+            </script>
+            <?php
+        },
+        'portfolio_item',
+        'normal',
+        'low'
+    );
+} );
+
 add_action( 'save_post_portfolio_item', function ( $post_id ) {
     if ( ! isset( $_POST['_portfolio_nonce'] ) ) return;
     if ( ! wp_verify_nonce(
@@ -416,6 +536,24 @@ add_action( 'save_post_portfolio_item', function ( $post_id ) {
             'portfolio_video',
             esc_url_raw( wp_unslash( $_POST['portfolio_video'] ) )
         );
+    }
+
+    // Gallery — sla alleen op als de nonce klopt
+    if ( isset( $_POST['_portfolio_gallery_nonce'] ) &&
+         wp_verify_nonce(
+             sanitize_text_field( wp_unslash( $_POST['_portfolio_gallery_nonce'] ) ),
+             'portfolio_gallery_save'
+         )
+    ) {
+        $raw_ids = isset( $_POST['portfolio_gallery_ids'] )
+            ? sanitize_text_field( wp_unslash( $_POST['portfolio_gallery_ids'] ) )
+            : '';
+        $ids = array_filter( array_map( 'absint', explode( ',', $raw_ids ) ) );
+        if ( $ids ) {
+            update_post_meta( $post_id, 'portfolio_gallery', implode( ',', $ids ) );
+        } else {
+            delete_post_meta( $post_id, 'portfolio_gallery' );
+        }
     }
 } );
 

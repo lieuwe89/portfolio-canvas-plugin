@@ -73,6 +73,17 @@ foreach ( $raw_posts as $post ) {
         $desc = wp_strip_all_tags( $post->post_excerpt );
     }
 
+    // Galerij-afbeeldingen (extra)
+    $gallery_raw  = get_post_meta( $post->ID, 'portfolio_gallery', true );
+    $gallery_ids  = $gallery_raw ? array_filter( array_map( 'absint', explode( ',', $gallery_raw ) ) ) : [];
+    $gallery_urls = [];
+    foreach ( $gallery_ids as $gid ) {
+        $gsrc = wp_get_attachment_image_src( $gid, 'full' );
+        if ( $gsrc ) {
+            $gallery_urls[] = $gsrc[0];
+        }
+    }
+
     // Decodeer HTML-entities (bijv. &#8217; → ') zodat de JSON
     // gewone Unicode-tekens bevat in plaats van escaped entities.
     $decode = function ( $str ) {
@@ -90,6 +101,7 @@ foreach ( $raw_posts as $post ) {
         'imgW'    => $img_w,
         'imgH'    => $img_h,
         'video'   => $video,
+        'gallery' => $gallery_urls,
     ];
 }
 
@@ -150,6 +162,7 @@ $site_name  = get_bloginfo( 'name' );
       background: var(--card);
       border: 1px solid var(--border);
       opacity: 0;
+      contain: layout style paint;
       transition: opacity 0.5s ease,
                   transform 0.18s ease,
                   box-shadow 0.18s ease,
@@ -163,11 +176,12 @@ $site_name  = get_bloginfo( 'name' );
       z-index: 99 !important;
       cursor: pointer;
     }
-    .card-img img {
+    .card-img img, .card-img video {
       display: block; width: 100%;
       background: #1e1e1e;
       pointer-events: none;
       -webkit-user-drag: none;
+      object-fit: cover;
     }
     .card-info {
       padding: 11px 14px 14px;
@@ -248,6 +262,38 @@ $site_name  = get_bloginfo( 'name' );
     #overlay-video video {
       width: 100%; height: 100%;
       display: block; border: none;
+    }
+
+    /* ── Galerij in overlay ── */
+    #overlay-gallery {
+      display: none;
+      position: relative;
+    }
+    #overlay-gallery-img {
+      display: block; width: 100%; max-height: 80vh;
+      object-fit: contain; background: #1c1c1c;
+    }
+    .gallery-nav {
+      position: absolute; top: 50%; transform: translateY(-50%);
+      width: 36px; height: 36px;
+      background: rgba(0,0,0,0.55);
+      backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+      border: none; border-radius: 50%;
+      color: rgba(255,255,255,0.8); font-size: 20px;
+      cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      transition: background 0.2s, transform 0.2s;
+      z-index: 2; line-height: 1;
+    }
+    .gallery-nav:hover { background: rgba(255,255,255,0.15); transform: translateY(-50%) scale(1.1); }
+    #overlay-prev { left: 10px; }
+    #overlay-next { right: 10px; }
+    #overlay-gallery-counter {
+      position: absolute; bottom: 10px; left: 50%; transform: translateX(-50%);
+      font-size: 11px; color: rgba(255,255,255,0.45);
+      background: rgba(0,0,0,0.45);
+      padding: 3px 10px; border-radius: 100px;
+      pointer-events: none;
     }
 
     /* ── Overlay ── */
@@ -383,6 +429,12 @@ $site_name  = get_bloginfo( 'name' );
     <button id="overlay-close" aria-label="Close">✕</button>
     <div id="overlay-panel">
       <div id="overlay-video"></div>
+      <div id="overlay-gallery">
+        <img id="overlay-gallery-img" src="" alt="">
+        <button id="overlay-prev" class="gallery-nav" aria-label="Vorige">&#8249;</button>
+        <button id="overlay-next" class="gallery-nav" aria-label="Volgende">&#8250;</button>
+        <div id="overlay-gallery-counter"></div>
+      </div>
       <img id="overlay-img" src="" alt="">
       <div id="overlay-colour-block"><span class="block-title"></span></div>
       <div id="overlay-info">
@@ -417,14 +469,19 @@ $site_name  = get_bloginfo( 'name' );
   const viewport = document.getElementById('viewport');
   const hint     = document.getElementById('hint');
 
+  /* ── Helpers ── */
+  function isDirectVideo(url) {
+    return url && /\.(mp4|webm|ogg|mov)(\?|#|$)/i.test(url);
+  }
+
   /* ── Config ── */
   const W        = 260;
   const GAP      = 15;
   const STRIDE   = W + GAP;
   const INFO_H   = 62;
   const FRICTION = 0.91;
-  const BUF_X    = 3;    // extra kolommen buiten viewport
-  const BUF_Y    = 700;  // extra pixels boven/onder viewport
+  const BUF_X    = 2;    // extra kolommen buiten viewport
+  const BUF_Y    = 500;  // extra pixels boven/onder viewport
 
   const ACCENTS = [
     '#111827','#1a1a2e','#16213e','#0f3460',
@@ -432,7 +489,7 @@ $site_name  = get_bloginfo( 'name' );
     '#1a2416','#1e1a0a','#221010','#101822',
   ];
 
-  /* ── Helpers ── */
+  /* ── HTML-escaper ── */
   function esc(str) {
     const d = document.createElement('div');
     d.textContent = String(str);
@@ -471,8 +528,14 @@ $site_name  = get_bloginfo( 'name' );
 
     if (item.img) {
       el.className = 'card card-img';
+      // Directe videobestanden: autoplay muted op de kaart
+      const mediaEl = isDirectVideo(item.video)
+        ? `<video src="${esc(item.video)}" poster="${esc(item.img)}"
+                  style="height:${imgH}px" autoplay muted loop playsinline
+                  draggable="false"></video>`
+        : `<img src="${esc(item.img)}" style="height:${imgH}px" loading="lazy" draggable="false">`;
       el.innerHTML =
-        `<img src="${esc(item.img)}" style="height:${imgH}px" loading="lazy" draggable="false">
+        `${mediaEl}
          <div class="card-info">
            <div class="meta-row">
              <span class="cat">${esc(item.cat)}</span>
@@ -526,6 +589,7 @@ $site_name  = get_bloginfo( 'name' );
       imgFull: item.imgFull || item.img,
       accent:  ACCENTS[ item.id % ACCENTS.length ],
       video:   item.video || '',
+      gallery: item.gallery || [],
     };
 
     return el;
@@ -547,7 +611,7 @@ $site_name  = get_bloginfo( 'name' );
     if ( ! cols.has(ci) ) {
       const r       = seededRng(ci * 31337 + 7);
       const stagger = Math.round( (r() * 2 - 1) * 140 );
-      cols.set(ci, { x: ci * STRIDE, bottomY: stagger, topY: stagger, bi: 0, ti: -1 });
+      cols.set(ci, { x: ci * STRIDE, bottomY: stagger, topY: stagger, bi: 0, ti: -1, els: [] });
     }
     return cols.get(ci);
   }
@@ -559,6 +623,7 @@ $site_name  = get_bloginfo( 'name' );
     const el   = buildCard(item);
     el.style.cssText = `left:${col.x}px;top:${col.bottomY}px;width:${W}px;`;
     canvas.appendChild(el);
+    col.els.push(el);
     setTimeout( () => el.classList.add('visible'), Math.min(cardCounter++ * 8, 300) );
     col.bottomY += h + GAP;
     col.bi++;
@@ -572,9 +637,26 @@ $site_name  = get_bloginfo( 'name' );
     const el   = buildCard(item);
     el.style.cssText = `left:${col.x}px;top:${top}px;width:${W}px;`;
     canvas.appendChild(el);
+    col.els.push(el);
     setTimeout( () => el.classList.add('visible'), Math.random() * 200 );
     col.topY = top;
     col.ti--;
+  }
+
+  /* ── Cull kolommen die ver buiten het scherm vallen ── */
+  let cullTick = 0;
+  function maybeCull() {
+    if ( ++cullTick % 40 !== 0 ) return;   // elke ~40 fill-aanroepen
+    const vpW    = viewport.clientWidth;
+    const margin = (BUF_X + 3) * STRIDE;
+    const left   = -ox - margin;
+    const right  = -ox + vpW + margin;
+    for (const [ci, col] of cols) {
+      if (col.x + W < left || col.x > right) {
+        col.els.forEach(el => el.remove());
+        cols.delete(ci);
+      }
+    }
   }
 
   function fill() {
@@ -592,17 +674,34 @@ $site_name  = get_bloginfo( 'name' );
       while ( col.bottomY < bottom ) pushBottom(ci);
       while ( col.topY    > top    ) pushTop(ci);
     }
+    maybeCull();
   }
 
   /* ── Overlay ── */
-  const overlayEl     = document.getElementById('overlay');
-  const overlayVideo  = document.getElementById('overlay-video');
-  const overlayImg    = document.getElementById('overlay-img');
-  const overlayColour = document.getElementById('overlay-colour-block');
-  const overlayCat    = document.getElementById('overlay-cat');
-  const overlayYear   = document.getElementById('overlay-year');
-  const overlayTitle  = document.getElementById('overlay-title');
-  const overlayDesc   = document.getElementById('overlay-desc');
+  const overlayEl      = document.getElementById('overlay');
+  const overlayVideo   = document.getElementById('overlay-video');
+  const overlayImg     = document.getElementById('overlay-img');
+  const overlayGallery = document.getElementById('overlay-gallery');
+  const overlayGallImg = document.getElementById('overlay-gallery-img');
+  const overlayCounter = document.getElementById('overlay-gallery-counter');
+  const overlayPrev    = document.getElementById('overlay-prev');
+  const overlayNext    = document.getElementById('overlay-next');
+  const overlayColour  = document.getElementById('overlay-colour-block');
+  const overlayCat     = document.getElementById('overlay-cat');
+  const overlayYear    = document.getElementById('overlay-year');
+  const overlayTitle   = document.getElementById('overlay-title');
+  const overlayDesc    = document.getElementById('overlay-desc');
+
+  let galleryImages = [];
+  let galleryIdx    = 0;
+
+  function showGallerySlide(idx) {
+    galleryIdx = ((idx % galleryImages.length) + galleryImages.length) % galleryImages.length;
+    overlayGallImg.src       = galleryImages[galleryIdx];
+    overlayCounter.textContent = (galleryIdx + 1) + ' / ' + galleryImages.length;
+  }
+  overlayPrev.addEventListener('click', e => { e.stopPropagation(); showGallerySlide(galleryIdx - 1); });
+  overlayNext.addEventListener('click', e => { e.stopPropagation(); showGallerySlide(galleryIdx + 1); });
 
   // Zet een video-URL om naar een embed-HTML-string
   function videoEmbedHtml(url) {
@@ -632,24 +731,38 @@ $site_name  = get_bloginfo( 'name' );
   }
 
   function openOverlay(d) {
-    // Standaard alles verbergen
-    overlayVideo.style.display  = 'none';
-    overlayImg.style.display    = 'none';
-    overlayColour.style.display = 'none';
+    // Alles verbergen
+    overlayVideo.style.display   = 'none';
+    overlayImg.style.display     = 'none';
+    overlayGallery.style.display = 'none';
+    overlayColour.style.display  = 'none';
+    galleryImages = [];
 
     if (d.video) {
+      // Video (YouTube / Vimeo / Instagram / directe mp4)
       overlayVideo.innerHTML = videoEmbedHtml(d.video);
-      // Instagram-posts zijn vierkant/portret, geen 16:9
       overlayVideo.style.aspectRatio = isInstagramUrl(d.video) ? 'unset' : '16 / 9';
       overlayVideo.style.minHeight   = isInstagramUrl(d.video) ? '540px'  : 'unset';
       overlayVideo.style.display     = 'block';
-    } else if (d.type === 'img' && d.imgFull) {
-      overlayImg.src           = d.imgFull;
-      overlayImg.style.display = 'block';
     } else {
-      overlayColour.style.display = 'flex';
-      overlayColour.style.background = d.accent || '#161616';
-      overlayColour.querySelector('.block-title').textContent = d.title;
+      // Bouw lijst van alle afbeeldingen: featured + galerij
+      const allImgs = [];
+      if (d.imgFull) allImgs.push(d.imgFull);
+      (d.gallery || []).forEach(u => allImgs.push(u));
+
+      if (allImgs.length > 1) {
+        // Galerij-modus
+        galleryImages = allImgs;
+        overlayGallery.style.display = 'block';
+        showGallerySlide(0);
+      } else if (d.type === 'img' && d.imgFull) {
+        overlayImg.src           = d.imgFull;
+        overlayImg.style.display = 'block';
+      } else {
+        overlayColour.style.display = 'flex';
+        overlayColour.style.background = d.accent || '#161616';
+        overlayColour.querySelector('.block-title').textContent = d.title;
+      }
     }
 
     overlayCat.textContent   = d.cat;
@@ -661,7 +774,8 @@ $site_name  = get_bloginfo( 'name' );
 
   function closeOverlay() {
     overlayEl.classList.remove('open');
-    overlayVideo.innerHTML = ''; // stop video bij sluiten
+    overlayVideo.innerHTML = '';
+    galleryImages = [];
   }
 
   overlayEl.addEventListener('click', e => {
@@ -748,6 +862,7 @@ $site_name  = get_bloginfo( 'name' );
   });
 
   /* ── Wheel / Trackpad ── */
+  let wheelRaf = 0;
   viewport.addEventListener('wheel', e => {
     e.preventDefault();
     cancelAnimationFrame(raf);
@@ -758,8 +873,11 @@ $site_name  = get_bloginfo( 'name' );
     ox -= dx;
     oy -= dy;
     applyTransform();
-    fill();
     dismissHint();
+    // Throttle fill() via rAF — voorkomt onnodige DOM-mutaties bij snel scrollen
+    if ( ! wheelRaf ) {
+      wheelRaf = requestAnimationFrame(() => { wheelRaf = 0; fill(); });
+    }
   }, { passive: false });
 
   /* ── Momentum ── */
@@ -778,6 +896,11 @@ $site_name  = get_bloginfo( 'name' );
   /* ── Keyboard ── */
   window.addEventListener('keydown', e => {
     if (e.key === 'Escape') { closeOverlay(); return; }
+    // Galerij-navigatie als de overlay open is met meerdere afbeeldingen
+    if (overlayEl.classList.contains('open') && galleryImages.length > 1) {
+      if (e.key === 'ArrowLeft')  { e.preventDefault(); showGallerySlide(galleryIdx - 1); return; }
+      if (e.key === 'ArrowRight') { e.preventDefault(); showGallerySlide(galleryIdx + 1); return; }
+    }
     const S = 260;
     const moves = { ArrowLeft:[S,0], ArrowRight:[-S,0], ArrowUp:[0,S], ArrowDown:[0,-S] };
     if ( ! moves[e.key] ) return;
