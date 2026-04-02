@@ -2,13 +2,13 @@
 /**
  * Plugin Name: Portfolio Canvas
  * Description: Infinite-pan portfolio canvas. Add items via Portfolio → Add New in the admin, then set any Page's template to "Portfolio Canvas".
- * Version:     1.4.0
+ * Version:     1.5.0
  * License:     GPL-2.0+
  */
 
 defined( 'ABSPATH' ) || exit;
 
-define( 'PORTFOLIO_CANVAS_VERSION', '1.4.0' );
+define( 'PORTFOLIO_CANVAS_VERSION', '1.5.0' );
 define( 'PORTFOLIO_CANVAS_GITHUB_REPO', 'lieuwe89/portfolio-canvas-plugin' );
 
 /* ── Auto-updater via GitHub Releases ───────────────── */
@@ -99,7 +99,179 @@ function portfolio_canvas_video_thumbnail( $url ) {
         return $thumb;
     }
 
+    // Instagram — vereist een Facebook App Token (zie Portfolio → Instellingen)
+    if ( preg_match( '/instagram\.com\/(?:p|reel|tv)\/([a-zA-Z0-9_-]+)/', $url, $m ) ) {
+        $token = get_option( 'portfolio_canvas_fb_token', '' );
+        if ( ! $token ) return '';
+
+        $cache_key = 'pc_ig_thumb_' . $m[1];
+        $cached    = get_transient( $cache_key );
+        if ( $cached !== false ) return $cached;
+
+        $api_url  = add_query_arg( [
+            'url'          => 'https://www.instagram.com/p/' . $m[1] . '/',
+            'access_token' => $token,
+        ], 'https://graph.facebook.com/v19.0/instagram_oembed' );
+
+        $response = wp_remote_get( $api_url, [ 'timeout' => 8 ] );
+
+        $thumb = '';
+        if ( ! is_wp_error( $response ) && 200 === wp_remote_retrieve_response_code( $response ) ) {
+            $data  = json_decode( wp_remote_retrieve_body( $response ) );
+            $thumb = $data->thumbnail_url ?? '';
+        }
+
+        set_transient( $cache_key, $thumb, WEEK_IN_SECONDS );
+        return $thumb;
+    }
+
     return ''; // directe videobestanden: geen auto-thumbnail
+}
+
+/* ── Instellingenpagina ──────────────────────────── */
+
+add_action( 'admin_menu', function () {
+    add_submenu_page(
+        'edit.php?post_type=portfolio_item',
+        'Portfolio Canvas — Instellingen',
+        'Instellingen',
+        'manage_options',
+        'portfolio-canvas-settings',
+        'portfolio_canvas_settings_page'
+    );
+} );
+
+add_action( 'admin_init', function () {
+    register_setting( 'portfolio_canvas_settings', 'portfolio_canvas_fb_token', [
+        'sanitize_callback' => 'sanitize_text_field',
+    ] );
+} );
+
+// AJAX: token testen
+add_action( 'wp_ajax_portfolio_canvas_test_token', function () {
+    check_ajax_referer( 'portfolio_canvas_test', 'nonce' );
+    if ( ! current_user_can( 'manage_options' ) ) wp_die();
+
+    $token = sanitize_text_field( wp_unslash( $_POST['token'] ?? '' ) );
+    if ( ! $token ) {
+        wp_send_json_error( 'Geen token ingevuld.' );
+    }
+
+    // Test met een eenvoudige Graph API-aanroep
+    $response = wp_remote_get(
+        add_query_arg( [ 'access_token' => $token ], 'https://graph.facebook.com/v19.0/app' ),
+        [ 'timeout' => 8 ]
+    );
+
+    if ( is_wp_error( $response ) ) {
+        wp_send_json_error( 'Verbindingsfout: ' . $response->get_error_message() );
+    }
+
+    $body = json_decode( wp_remote_retrieve_body( $response ), true );
+    $code = wp_remote_retrieve_response_code( $response );
+
+    if ( 200 === $code && ! empty( $body['id'] ) ) {
+        wp_send_json_success( 'Token werkt ✓ (App: ' . esc_html( $body['name'] ?? $body['id'] ) . ')' );
+    } else {
+        $msg = $body['error']['message'] ?? 'Onbekende fout.';
+        wp_send_json_error( 'Token ongeldig: ' . esc_html( $msg ) );
+    }
+} );
+
+function portfolio_canvas_settings_page() {
+    $token = get_option( 'portfolio_canvas_fb_token', '' );
+    ?>
+    <div class="wrap">
+        <h1>Portfolio Canvas — Instellingen</h1>
+
+        <form method="post" action="options.php">
+            <?php settings_fields( 'portfolio_canvas_settings' ); ?>
+
+            <h2 style="margin-top:24px">Instagram-thumbnails</h2>
+            <p style="max-width:680px;color:#555">
+                Voor automatische thumbnails van Instagram-posts heb je een
+                <strong>Facebook App Token</strong> nodig. Dit token heeft de vorm
+                <code>APP_ID|APP_SECRET</code> en verloopt nooit.
+            </p>
+
+            <details style="max-width:680px;margin:12px 0 20px;background:#f6f7f7;border:1px solid #ddd;border-radius:4px;padding:12px 16px">
+                <summary style="cursor:pointer;font-weight:600">Hoe maak je een App Token aan?</summary>
+                <ol style="margin:12px 0 0 16px;line-height:1.9">
+                    <li>Ga naar <a href="https://developers.facebook.com/apps/" target="_blank">developers.facebook.com/apps</a> en log in met je Facebook-account.</li>
+                    <li>Klik op <strong>App maken</strong> → kies type <em>Business</em> → vul een naam in (bijv. <em>Portfolio</em>) → maak aan.</li>
+                    <li>Ga in je app naar <strong>Instellingen → Basis</strong>.</li>
+                    <li>Kopieer je <strong>App ID</strong> en je <strong>App-geheim</strong> (klik op "Tonen").</li>
+                    <li>Combineer ze als: <code>APP_ID|APP_SECRET</code> (met een verticale streep ertussen).</li>
+                    <li>Plak dit in het veld hieronder en sla op.</li>
+                </ol>
+                <p style="margin:10px 0 0;color:#777;font-size:13px">
+                    ℹ️ Het App-geheim staat zichtbaar in het veld — deel dit nooit publiek.
+                    Dit token geeft alleen leestoegang tot openbare Instagram-posts.
+                </p>
+            </details>
+
+            <table class="form-table" style="max-width:680px">
+                <tr>
+                    <th style="width:160px"><label for="portfolio_canvas_fb_token">App Token</label></th>
+                    <td>
+                        <input type="text"
+                               id="portfolio_canvas_fb_token"
+                               name="portfolio_canvas_fb_token"
+                               value="<?php echo esc_attr( $token ); ?>"
+                               placeholder="123456789|abcdefghijklmnopqrstuvwxyz"
+                               style="width:100%;max-width:500px;font-family:monospace">
+                        <p style="margin-top:8px">
+                            <button type="button" id="pc-test-token" class="button">
+                                Token testen
+                            </button>
+                            <span id="pc-test-result" style="margin-left:10px;font-size:13px"></span>
+                        </p>
+                    </td>
+                </tr>
+            </table>
+
+            <?php submit_button( 'Instellingen opslaan' ); ?>
+        </form>
+    </div>
+
+    <script>
+    document.getElementById('pc-test-token').addEventListener('click', function () {
+        const btn    = this;
+        const result = document.getElementById('pc-test-result');
+        const token  = document.getElementById('portfolio_canvas_fb_token').value.trim();
+
+        if ( ! token ) {
+            result.style.color = '#b32d2e';
+            result.textContent = 'Vul eerst een token in.';
+            return;
+        }
+
+        btn.disabled    = true;
+        btn.textContent = 'Bezig…';
+        result.textContent = '';
+
+        const data = new FormData();
+        data.append('action', 'portfolio_canvas_test_token');
+        data.append('nonce',  '<?php echo esc_js( wp_create_nonce( 'portfolio_canvas_test' ) ); ?>');
+        data.append('token',  token);
+
+        fetch(ajaxurl, { method: 'POST', body: data })
+            .then( r => r.json() )
+            .then( r => {
+                result.style.color = r.success ? '#1a7f37' : '#b32d2e';
+                result.textContent = r.data;
+            } )
+            .catch( () => {
+                result.style.color = '#b32d2e';
+                result.textContent = 'Verbindingsfout.';
+            } )
+            .finally( () => {
+                btn.disabled    = false;
+                btn.textContent = 'Token testen';
+            } );
+    });
+    </script>
+    <?php
 }
 
 /* ── 1. Custom Post Type ─────────────────────────── */
