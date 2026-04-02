@@ -61,11 +61,17 @@ foreach ( $raw_posts as $post ) {
         $desc = wp_strip_all_tags( $post->post_excerpt );
     }
 
+    // Decodeer HTML-entities (bijv. &#8217; → ') zodat de JSON
+    // gewone Unicode-tekens bevat in plaats van escaped entities.
+    $decode = function ( $str ) {
+        return html_entity_decode( $str, ENT_QUOTES | ENT_HTML5, 'UTF-8' );
+    };
+
     $items[] = [
         'id'      => $post->ID,
-        'title'   => get_the_title( $post ),
-        'desc'    => $desc,
-        'cat'     => $cat,
+        'title'   => $decode( get_the_title( $post ) ),
+        'desc'    => $decode( $desc ),
+        'cat'     => $decode( $cat ),
         'year'    => $year,
         'img'     => $img_card,
         'imgFull' => $img_full ?: $img_card,
