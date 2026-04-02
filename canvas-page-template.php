@@ -6,6 +6,9 @@
 
 defined( 'ABSPATH' ) || exit;
 
+// Stuur UTF-8 header vóór alle output
+header( 'Content-Type: text/html; charset=UTF-8' );
+
 /* ── Collect portfolio items ─────────────────────── */
 
 $raw_posts = get_posts( [
@@ -71,7 +74,7 @@ foreach ( $raw_posts as $post ) {
     ];
 }
 
-$items_json = wp_json_encode( $items, JSON_HEX_TAG | JSON_HEX_AMP );
+$items_json = wp_json_encode( $items, JSON_HEX_TAG | JSON_HEX_AMP | JSON_UNESCAPED_UNICODE );
 $page_title = get_the_title( get_queried_object_id() );
 $site_name  = get_bloginfo( 'name' );
 
@@ -142,7 +145,7 @@ $site_name  = get_bloginfo( 'name' );
       cursor: pointer;
     }
     .card-img img {
-      display: block; width: 100%; object-fit: cover;
+      display: block; width: 100%;
       background: #1e1e1e;
       pointer-events: none;
       -webkit-user-drag: none;
@@ -210,8 +213,8 @@ $site_name  = get_bloginfo( 'name' );
     }
     #overlay.open #overlay-panel { transform: scale(1) translateY(0); opacity: 1; }
     #overlay-img {
-      display: block; width: 100%; max-height: 62vh;
-      object-fit: cover; background: #1c1c1c;
+      display: block; width: 100%; max-height: 80vh;
+      object-fit: contain; background: #1c1c1c;
     }
     #overlay-colour-block {
       width: 100%; height: 260px;
@@ -361,8 +364,8 @@ $site_name  = get_bloginfo( 'name' );
 
   function cardImgH(item) {
     if ( ! item.imgW || ! item.imgH ) return 200;
-    const natural = Math.round( W * item.imgH / item.imgW );
-    return Math.min( Math.max( natural, 150 ), 320 );
+    // Volledige hoogte op basis van het echte beeldformaat, minimaal 150px
+    return Math.max( Math.round( W * item.imgH / item.imgW ), 150 );
   }
 
   function totalCardH(item) {
