@@ -2,13 +2,13 @@
 /**
  * Plugin Name: Portfolio Canvas
  * Description: Infinite-pan portfolio canvas. Add items via Portfolio → Add New in the admin, then set any Page's template to "Portfolio Canvas".
- * Version:     1.5.0
+ * Version:     1.5.1
  * License:     GPL-2.0+
  */
 
 defined( 'ABSPATH' ) || exit;
 
-define( 'PORTFOLIO_CANVAS_VERSION', '1.5.0' );
+define( 'PORTFOLIO_CANVAS_VERSION', '1.5.1' );
 define( 'PORTFOLIO_CANVAS_GITHUB_REPO', 'lieuwe89/portfolio-canvas-plugin' );
 
 /* ── Auto-updater via GitHub Releases ───────────────── */
@@ -196,17 +196,21 @@ function portfolio_canvas_settings_page() {
 
             <details style="max-width:680px;margin:12px 0 20px;background:#f6f7f7;border:1px solid #ddd;border-radius:4px;padding:12px 16px">
                 <summary style="cursor:pointer;font-weight:600">Hoe maak je een App Token aan?</summary>
-                <ol style="margin:12px 0 0 16px;line-height:1.9">
-                    <li>Ga naar <a href="https://developers.facebook.com/apps/" target="_blank">developers.facebook.com/apps</a> en log in met je Facebook-account.</li>
-                    <li>Klik op <strong>App maken</strong> → kies type <em>Business</em> → vul een naam in (bijv. <em>Portfolio</em>) → maak aan.</li>
-                    <li>Ga in je app naar <strong>Instellingen → Basis</strong>.</li>
-                    <li>Kopieer je <strong>App ID</strong> en je <strong>App-geheim</strong> (klik op "Tonen").</li>
-                    <li>Combineer ze als: <code>APP_ID|APP_SECRET</code> (met een verticale streep ertussen).</li>
-                    <li>Plak dit in het veld hieronder en sla op.</li>
+                <p style="margin:10px 0 6px;color:#555;font-size:13px">
+                    ⚠️ Je moet eerst <strong>ingelogd zijn op Facebook</strong> voordat je op onderstaande links klikt, anders zie je een loginpagina.
+                </p>
+                <ol style="margin:8px 0 0 16px;line-height:1.9">
+                    <li>Log in op Facebook en ga dan naar <a href="https://developers.facebook.com/" target="_blank">developers.facebook.com</a>.</li>
+                    <li>Klik rechtsboven op <strong>Mijn apps</strong> → <strong>App maken</strong>.</li>
+                    <li>Kies het type <em>Business</em> (of <em>Overige</em>), vul een naam in (bijv. <em>Portfolio</em>) en maak de app aan.</li>
+                    <li>Ga in je nieuwe app naar <strong>Instellingen → Basis</strong> (linker menu).</li>
+                    <li>Kopieer je <strong>App ID</strong> en klik op <em>Tonen</em> naast je <strong>App-geheim</strong>.</li>
+                    <li>Combineer ze als: <code>APP_ID|APP_SECRET</code> (met een verticale streep ertussen, zonder spaties).</li>
+                    <li>Plak dit in het veld hieronder, klik op <strong>Token testen</strong> en sla daarna op.</li>
                 </ol>
                 <p style="margin:10px 0 0;color:#777;font-size:13px">
-                    ℹ️ Het App-geheim staat zichtbaar in het veld — deel dit nooit publiek.
-                    Dit token geeft alleen leestoegang tot openbare Instagram-posts.
+                    ℹ️ Dit token verloopt nooit en geeft alleen leestoegang tot openbare Instagram-posts.
+                    Deel het App-geheim niet publiek.
                 </p>
             </details>
 
