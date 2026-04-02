@@ -474,7 +474,7 @@ $site_name  = get_bloginfo( 'name' );
     return url && /\.(mp4|webm|ogg|mov)(\?|#|$)/i.test(url);
   }
 
-  /* ── Config ── */
+/* ── Config ── */
   const W        = 260;
   const GAP      = 15;
   const STRIDE   = W + GAP;
@@ -516,13 +516,16 @@ $site_name  = get_bloginfo( 'name' );
   }
 
   function totalCardH(item) {
-    return item.img ? cardImgH(item) + INFO_H : 160;
+    if (item.img) return cardImgH(item) + INFO_H;
+    if (!item.img && isDirectVideo(item.video)) return 180 + INFO_H;
+    return 160;
   }
 
   /* ── Build card elements ── */
   function buildCard(item) {
     const el   = document.createElement('div');
     const imgH = cardImgH(item);
+    el.dataset.itemId = item.id;
 
     const isInstagram = item.video && /instagram\.com/.test(item.video);
 
@@ -536,6 +539,17 @@ $site_name  = get_bloginfo( 'name' );
         : `<img src="${esc(item.img)}" style="height:${imgH}px" loading="lazy" draggable="false">`;
       el.innerHTML =
         `${mediaEl}
+         <div class="card-info">
+           <div class="meta-row">
+             <span class="cat">${esc(item.cat)}</span>
+             <span class="year">${esc(item.year)}</span>
+           </div>
+           <div class="title">${esc(item.title)}</div>
+         </div>`;
+    } else if (isDirectVideo(item.video)) {
+      el.className = 'card card-img';
+      el.innerHTML =
+        `<video src="${esc(item.video)}" style="height:180px" autoplay muted loop playsinline draggable="false"></video>
          <div class="card-info">
            <div class="meta-row">
              <span class="cat">${esc(item.cat)}</span>
@@ -616,6 +630,11 @@ $site_name  = get_bloginfo( 'name' );
     return cols.get(ci);
   }
 
+  function playCardVideo(el) {
+    const vid = el.querySelector('video');
+    if (vid) vid.play().catch(function () {});
+  }
+
   function pushBottom(ci) {
     const col  = getCol(ci);
     const item = itemAtPos(ci, col.bi);
@@ -623,6 +642,7 @@ $site_name  = get_bloginfo( 'name' );
     const el   = buildCard(item);
     el.style.cssText = `left:${col.x}px;top:${col.bottomY}px;width:${W}px;`;
     canvas.appendChild(el);
+    playCardVideo(el);
     col.els.push(el);
     setTimeout( () => el.classList.add('visible'), Math.min(cardCounter++ * 8, 300) );
     col.bottomY += h + GAP;
@@ -637,6 +657,7 @@ $site_name  = get_bloginfo( 'name' );
     const el   = buildCard(item);
     el.style.cssText = `left:${col.x}px;top:${top}px;width:${W}px;`;
     canvas.appendChild(el);
+    playCardVideo(el);
     col.els.push(el);
     setTimeout( () => el.classList.add('visible'), Math.random() * 200 );
     col.topY = top;
