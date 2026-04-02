@@ -266,6 +266,12 @@ $site_name  = get_bloginfo( 'name' );
     .nav { display: flex; gap: 18px; pointer-events: all; }
     .nav a { font-size: 12px; color: rgba(255,255,255,0.35); text-decoration: none; transition: color 0.2s; }
     .nav a:hover { color: rgba(255,255,255,0.75); }
+    .logo-link {
+      text-decoration: none;
+      color: inherit;
+      transition: opacity 0.2s;
+    }
+    .logo-link:hover { opacity: 0.6; }
 
     /* ── Hint ── */
     #hint {
@@ -297,7 +303,7 @@ $site_name  = get_bloginfo( 'name' );
   <div id="header">
     <div>
       <div class="logo"><?php echo esc_html( $page_title ); ?></div>
-      <div class="subline"><?php echo esc_html( $site_name ); ?></div>
+      <a class="subline logo-link" href="<?php echo esc_url( home_url( '/' ) ); ?>"><?php echo esc_html( $site_name ); ?></a>
     </div>
     <nav class="nav">
       <a href="<?php echo esc_url( home_url( '/' ) ); ?>">Home</a>
@@ -354,6 +360,8 @@ $site_name  = get_bloginfo( 'name' );
   const STRIDE   = W + GAP;
   const INFO_H   = 62;
   const FRICTION = 0.91;
+  const BUF_X    = 3;    // extra kolommen buiten viewport
+  const BUF_Y    = 700;  // extra pixels boven/onder viewport
 
   const ACCENTS = [
     '#111827','#1a1a2e','#16213e','#0f3460',
@@ -368,9 +376,22 @@ $site_name  = get_bloginfo( 'name' );
     return d.innerHTML;
   }
 
+  // Bepaal welk WP-item op positie (col, row) hoort — herhaalt cyclisch
+  function itemAtPos(col, row) {
+    const h = ( Math.abs(col * 73856093) ^ Math.abs(row < 0
+      ? (-row) * 19349663 + 99999
+      :   row  * 19349663) ) >>> 0;
+    return WP_ITEMS[ h % WP_ITEMS.length ];
+  }
+
+  // Seeded RNG voor de kolom-stagger
+  function seededRng(seed) {
+    let s = (seed ^ 0xDEADBEEF) >>> 0;
+    return () => { s = Math.imul(1664525, s) + 1013904223 | 0; return (s >>> 0) / 4294967296; };
+  }
+
   function cardImgH(item) {
     if ( ! item.imgW || ! item.imgH ) return 200;
-    // Volledige hoogte op basis van het echte beeldformaat, minimaal 150px
     return Math.max( Math.round( W * item.imgH / item.imgW ), 150 );
   }
 
@@ -380,7 +401,7 @@ $site_name  = get_bloginfo( 'name' );
 
   /* ── Build card elements ── */
   function buildCard(item) {
-    const el  = document.createElement('div');
+    const el   = document.createElement('div');
     const imgH = cardImgH(item);
 
     if (item.img) {
@@ -406,13 +427,13 @@ $site_name  = get_bloginfo( 'name' );
     }
 
     el._cardData = {
-      type:     item.img ? 'img' : 'colour',
-      title:    item.title,
-      desc:     item.desc,
-      cat:      item.cat,
-      year:     item.year,
-      imgFull:  item.imgFull || item.img,
-      accent:   ACCENTS[ item.id % ACCENTS.length ],
+      type:    item.img ? 'img' : 'colour',
+      title:   item.title,
+      desc:    item.desc,
+      cat:     item.cat,
+      year:    item.year,
+      imgFull: item.imgFull || item.img,
+      accent:  ACCENTS[ item.id % ACCENTS.length ],
     };
 
     return el;
@@ -425,36 +446,61 @@ $site_name  = get_bloginfo( 'name' );
     canvas.style.transform = `translate(${ox}px,${oy}px)`;
   }
 
-  /* ── Masonry layout ── */
-  (function layoutItems() {
-    const vpW     = viewport.clientWidth;
-    const vpH     = viewport.clientHeight;
-    const numCols = Math.max( 2, Math.floor( vpW * 0.88 / STRIDE ) );
-    const totalW  = numCols * STRIDE - GAP;
+  /* ── Oneindige kolommenstructuur ── */
+  // Elke kolom: { x, bottomY, topY, bi (volgende index omlaag), ti (volgende index omhoog) }
+  const cols = new Map();
+  let cardCounter = 0;
 
-    // Place items starting at canvas (0,0); we'll translate to center
-    const colH = new Array(numCols).fill(0);
+  function getCol(ci) {
+    if ( ! cols.has(ci) ) {
+      const r       = seededRng(ci * 31337 + 7);
+      const stagger = Math.round( (r() * 2 - 1) * 140 );
+      cols.set(ci, { x: ci * STRIDE, bottomY: stagger, topY: stagger, bi: 0, ti: -1 });
+    }
+    return cols.get(ci);
+  }
 
-    WP_ITEMS.forEach( (item, i) => {
-      const col = colH.indexOf( Math.min(...colH) );
-      const x   = col * STRIDE;
-      const y   = colH[col];
-      const h   = totalCardH(item);
+  function pushBottom(ci) {
+    const col  = getCol(ci);
+    const item = itemAtPos(ci, col.bi);
+    const h    = totalCardH(item);
+    const el   = buildCard(item);
+    el.style.cssText = `left:${col.x}px;top:${col.bottomY}px;width:${W}px;`;
+    canvas.appendChild(el);
+    setTimeout( () => el.classList.add('visible'), Math.min(cardCounter++ * 8, 300) );
+    col.bottomY += h + GAP;
+    col.bi++;
+  }
 
-      const el = buildCard(item);
-      el.style.cssText = `left:${x}px;top:${y}px;width:${W}px;`;
-      canvas.appendChild(el);
-      setTimeout( () => el.classList.add('visible'), i * 35 );
+  function pushTop(ci) {
+    const col  = getCol(ci);
+    const item = itemAtPos(ci, col.ti);
+    const h    = totalCardH(item);
+    const top  = col.topY - h - GAP;
+    const el   = buildCard(item);
+    el.style.cssText = `left:${col.x}px;top:${top}px;width:${W}px;`;
+    canvas.appendChild(el);
+    setTimeout( () => el.classList.add('visible'), Math.random() * 200 );
+    col.topY = top;
+    col.ti--;
+  }
 
-      colH[col] += h + GAP;
-    });
+  function fill() {
+    const vpW    = viewport.clientWidth;
+    const vpH    = viewport.clientHeight;
+    const left   = -ox - BUF_X * STRIDE;
+    const right  = -ox + vpW + BUF_X * STRIDE;
+    const top    = -oy - BUF_Y;
+    const bottom = -oy + vpH + BUF_Y;
+    const ci0    = Math.floor( left  / STRIDE );
+    const ci1    = Math.ceil ( right / STRIDE );
 
-    // Center the grid on screen
-    const gridH = Math.max(...colH);
-    ox = Math.round( (vpW  - totalW)  / 2 );
-    oy = Math.round( (vpH  - gridH)   / 2 );
-    applyTransform();
-  })();
+    for ( let ci = ci0; ci <= ci1; ci++ ) {
+      const col = getCol(ci);
+      while ( col.bottomY < bottom ) pushBottom(ci);
+      while ( col.topY    > top    ) pushTop(ci);
+    }
+  }
 
   /* ── Overlay ── */
   const overlayEl     = document.getElementById('overlay');
@@ -525,6 +571,7 @@ $site_name  = get_bloginfo( 'name' );
     ox = ox0 + (e.clientX - mx0);
     oy = oy0 + (e.clientY - my0);
     applyTransform();
+    fill();
   });
 
   window.addEventListener('mouseup', e => {
@@ -561,6 +608,7 @@ $site_name  = get_bloginfo( 'name' );
     ox = ox0 + (t.clientX - touch0.clientX);
     oy = oy0 + (t.clientY - touch0.clientY);
     applyTransform();
+    fill();
   }, { passive: true });
 
   viewport.addEventListener('touchend', () => {
@@ -579,6 +627,7 @@ $site_name  = get_bloginfo( 'name' );
     ox -= dx;
     oy -= dy;
     applyTransform();
+    fill();
     dismissHint();
   }, { passive: false });
 
@@ -590,6 +639,7 @@ $site_name  = get_bloginfo( 'name' );
       if ( Math.abs(vx) < 0.08 && Math.abs(vy) < 0.08 ) return;
       ox += vx; oy += vy;
       applyTransform();
+      fill();
       raf = requestAnimationFrame(step);
     })();
   }
@@ -606,6 +656,7 @@ $site_name  = get_bloginfo( 'name' );
     ox += moves[e.key][0];
     oy += moves[e.key][1];
     applyTransform();
+    fill();
     momentum();
     dismissHint();
   });
@@ -618,6 +669,14 @@ $site_name  = get_bloginfo( 'name' );
     hint.classList.add('hidden');
   }
   setTimeout(dismissHint, 6000);
+
+  /* ── Init ── */
+  ox = Math.round( window.innerWidth  / 2 - W / 2 );
+  oy = Math.round( window.innerHeight / 2 - 200 );
+  applyTransform();
+  fill();
+
+  window.addEventListener('resize', fill);
 
 })();
 </script>
