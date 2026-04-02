@@ -2,11 +2,68 @@
 /**
  * Plugin Name: Portfolio Canvas
  * Description: Infinite-pan portfolio canvas. Add items via Portfolio → Add New in the admin, then set any Page's template to "Portfolio Canvas".
- * Version:     1.0.0
+ * Version:     1.1.0
  * License:     GPL-2.0+
  */
 
 defined( 'ABSPATH' ) || exit;
+
+define( 'PORTFOLIO_CANVAS_VERSION', '1.1.0' );
+define( 'PORTFOLIO_CANVAS_GITHUB_REPO', 'lieuwe89/portfolio-canvas-plugin' );
+
+/* ── Auto-updater via GitHub Releases ───────────────── */
+
+add_filter( 'pre_set_site_transient_update_plugins', function ( $transient ) {
+    if ( empty( $transient->checked ) ) {
+        return $transient;
+    }
+
+    $plugin_slug = plugin_basename( __FILE__ );
+    $response    = wp_remote_get(
+        'https://api.github.com/repos/' . PORTFOLIO_CANVAS_GITHUB_REPO . '/releases/latest',
+        [
+            'headers' => [
+                'Accept'     => 'application/vnd.github.v3+json',
+                'User-Agent' => 'WordPress/' . get_bloginfo( 'version' ),
+            ],
+            'timeout' => 10,
+        ]
+    );
+
+    if ( is_wp_error( $response ) || wp_remote_retrieve_response_code( $response ) !== 200 ) {
+        return $transient;
+    }
+
+    $release      = json_decode( wp_remote_retrieve_body( $response ) );
+    $latest       = ltrim( $release->tag_name ?? '', 'v' );
+    $download_url = $release->zipball_url ?? '';
+
+    if ( $latest && version_compare( $latest, PORTFOLIO_CANVAS_VERSION, '>' ) ) {
+        $transient->response[ $plugin_slug ] = (object) [
+            'slug'        => dirname( $plugin_slug ),
+            'plugin'      => $plugin_slug,
+            'new_version' => $latest,
+            'url'         => 'https://github.com/' . PORTFOLIO_CANVAS_GITHUB_REPO,
+            'package'     => $download_url,
+        ];
+    }
+
+    return $transient;
+} );
+
+// Zorg dat de plugin-map na een update de goede naam heeft
+add_filter( 'upgrader_source_selection', function ( $source, $remote_source, $upgrader ) {
+    if ( isset( $upgrader->skin->plugin ) &&
+         $upgrader->skin->plugin === plugin_basename( __FILE__ ) ) {
+        $corrected = trailingslashit( $remote_source ) . 'portfolio-canvas-plugin/';
+        if ( $source !== $corrected ) {
+            global $wp_filesystem;
+            $wp_filesystem->move( $source, $corrected );
+            return $corrected;
+        }
+    }
+    return $source;
+}, 10, 3 );
 
 /* ── 1. Custom Post Type ─────────────────────────── */
 
