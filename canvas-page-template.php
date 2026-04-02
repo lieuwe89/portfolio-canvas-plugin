@@ -45,6 +45,18 @@ foreach ( $raw_posts as $post ) {
         }
     }
 
+    // Auto-thumbnail uit video als er geen featured image is
+    $video = get_post_meta( $post->ID, 'portfolio_video', true ) ?: '';
+    if ( ! $img_card && $video ) {
+        $auto = portfolio_canvas_video_thumbnail( $video );
+        if ( $auto ) {
+            $img_card = $auto;
+            $img_full = $auto;
+            $img_w    = 480;
+            $img_h    = 360;
+        }
+    }
+
     // Category (first term)
     $terms = get_the_terms( $post->ID, 'portfolio_cat' );
     $cat   = ( $terms && ! is_wp_error( $terms ) ) ? $terms[0]->name : 'Work';
@@ -77,7 +89,7 @@ foreach ( $raw_posts as $post ) {
         'imgFull' => $img_full ?: $img_card,
         'imgW'    => $img_w,
         'imgH'    => $img_h,
-        'video'   => get_post_meta( $post->ID, 'portfolio_video', true ) ?: '',
+        'video'   => $video,
     ];
 }
 

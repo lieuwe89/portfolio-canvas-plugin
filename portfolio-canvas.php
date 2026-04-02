@@ -2,13 +2,13 @@
 /**
  * Plugin Name: Portfolio Canvas
  * Description: Infinite-pan portfolio canvas. Add items via Portfolio → Add New in the admin, then set any Page's template to "Portfolio Canvas".
- * Version:     1.3.0
+ * Version:     1.3.1
  * License:     GPL-2.0+
  */
 
 defined( 'ABSPATH' ) || exit;
 
-define( 'PORTFOLIO_CANVAS_VERSION', '1.3.0' );
+define( 'PORTFOLIO_CANVAS_VERSION', '1.3.1' );
 define( 'PORTFOLIO_CANVAS_GITHUB_REPO', 'lieuwe89/portfolio-canvas-plugin' );
 
 /* ── Auto-updater via GitHub Releases ───────────────── */
@@ -64,6 +64,43 @@ add_filter( 'upgrader_source_selection', function ( $source, $remote_source, $up
     }
     return $source;
 }, 10, 3 );
+
+/* ── Thumbnail ophalen uit video-URL ─────────────── */
+
+function portfolio_canvas_video_thumbnail( $url ) {
+    if ( ! $url ) return '';
+
+    // YouTube — hqdefault bestaat altijd (480×360)
+    if ( preg_match(
+        '/(?:youtube\.com\/(?:watch\?v=|embed\/|shorts\/)|youtu\.be\/)([a-zA-Z0-9_-]{11})/',
+        $url, $m
+    ) ) {
+        return 'https://img.youtube.com/vi/' . $m[1] . '/hqdefault.jpg';
+    }
+
+    // Vimeo — oEmbed API, resultaat wordt een week gecached per video
+    if ( preg_match( '/vimeo\.com\/(\d+)/', $url, $m ) ) {
+        $cache_key = 'pc_vimeo_thumb_' . $m[1];
+        $cached    = get_transient( $cache_key );
+        if ( $cached !== false ) return $cached;
+
+        $response = wp_remote_get(
+            'https://vimeo.com/api/oembed.json?url=' . rawurlencode( 'https://vimeo.com/' . $m[1] ),
+            [ 'timeout' => 8 ]
+        );
+
+        $thumb = '';
+        if ( ! is_wp_error( $response ) && 200 === wp_remote_retrieve_response_code( $response ) ) {
+            $data  = json_decode( wp_remote_retrieve_body( $response ) );
+            $thumb = $data->thumbnail_url ?? '';
+        }
+
+        set_transient( $cache_key, $thumb, WEEK_IN_SECONDS );
+        return $thumb;
+    }
+
+    return ''; // directe videobestanden: geen auto-thumbnail
+}
 
 /* ── 1. Custom Post Type ─────────────────────────── */
 
