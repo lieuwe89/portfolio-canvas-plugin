@@ -519,7 +519,7 @@ $site_name  = get_bloginfo( 'name' );
       [idx[i], idx[j]] = [idx[j], idx[i]];
     }
     // Verschuif startpositie per kolom om horizontale herhaling te verminderen
-    return WP_ITEMS[ idx[ (pos + col) % n ] ];
+    return WP_ITEMS[ idx[ ((pos + col) % n + n) % n ] ];
   }
 
   // Seeded RNG voor de kolom-stagger
