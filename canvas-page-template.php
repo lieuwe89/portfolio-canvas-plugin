@@ -613,6 +613,7 @@ $site_name  = get_bloginfo( 'name' );
     }
 
     el._cardData = {
+      id:      item.id,
       type:    item.img ? 'img' : 'colour',
       title:   item.title,
       desc:    item.desc,
@@ -968,6 +969,27 @@ $site_name  = get_bloginfo( 'name' );
   oy = Math.round( window.innerHeight / 2 - 200 );
   applyTransform();
   fill();
+
+  /* ── Deep-link: open overlay for #item-{id} ── */
+  (function () {
+    const m = window.location.hash.match(/^#item-(\d+)$/);
+    if ( ! m ) return;
+    const targetId = parseInt(m[1], 10);
+    const item = WP_ITEMS.find(function (i) { return i.id === targetId; });
+    if ( ! item ) return;
+    openOverlay({
+      id:      item.id,
+      type:    item.img ? 'img' : 'colour',
+      title:   item.title,
+      desc:    item.desc,
+      cat:     item.cat,
+      year:    item.year,
+      imgFull: item.imgFull || item.img,
+      accent:  ACCENTS[ item.id % ACCENTS.length ],
+      video:   item.video || '',
+      gallery: item.gallery || [],
+    });
+  })();
 
   window.addEventListener('resize', fill);
 
