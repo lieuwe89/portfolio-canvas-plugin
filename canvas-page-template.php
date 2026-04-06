@@ -496,7 +496,7 @@ $site_name  = get_bloginfo( 'name' );
   const INFO_H   = 62;
   const FRICTION = 0.91;
   const SPRING   = 0.12;
-  const R        = STRIDE * 1.5;   // base ring radius ≈ 412px
+  const R        = STRIDE + 25;    // base ring radius ≈ 300px — tighter, more uniform spacing
 
   let canvasW = 0, canvasH = 0;
 
@@ -522,6 +522,32 @@ $site_name  = get_bloginfo( 'name' );
     if (item.img) return cardImgH(item) + INFO_H;
     if (!item.img && isDirectVideo(item.video)) return 200 + INFO_H;
     return 160;
+  }
+
+  /* ── Capture first frame of a local/same-origin video as a data URL ── */
+  function captureVideoFirstFrame(videoUrl, callback) {
+    const v = document.createElement('video');
+    v.muted       = true;
+    v.playsInline = true;
+    v.preload     = 'metadata';
+    v.addEventListener('loadeddata', function onData() {
+      v.removeEventListener('loadeddata', onData);
+      v.currentTime = 0.25;
+    });
+    v.addEventListener('seeked', function onSeeked() {
+      v.removeEventListener('seeked', onSeeked);
+      try {
+        const c   = document.createElement('canvas');
+        c.width   = v.videoWidth  || 480;
+        c.height  = v.videoHeight || 360;
+        c.getContext('2d').drawImage(v, 0, 0, c.width, c.height);
+        callback(c.toDataURL('image/jpeg', 0.75));
+      } catch (e) {
+        callback(null); // cross-origin or other error — silently skip
+      }
+    });
+    v.addEventListener('error', function() { callback(null); });
+    v.src = videoUrl;
   }
 
   /* ── Build card elements ── */
@@ -652,8 +678,8 @@ $site_name  = get_bloginfo( 'name' );
       }
     }
 
-    // Apply jitter (±20% of R) and rotation (±2°), record bounding box
-    const jitter = R * 0.2;
+    // Apply jitter (±14px organic variation) and rotation (±2°), record bounding box
+    const jitter = 14;
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
     const placed = [];
 
@@ -683,6 +709,15 @@ $site_name  = get_bloginfo( 'name' );
       el.style.cssText = `left:${cx}px;top:${cy}px;width:${W}px;--r:${rot.toFixed(2)}deg;`;
       canvas.appendChild(el);
       playCardVideo(el);
+      // Restore first-frame cover for direct-video cards without a featured image
+      if (!item.img && isDirectVideo(item.video)) {
+        captureVideoFirstFrame(item.video, function(dataUrl) {
+          if (!dataUrl) return;
+          const vid = el.querySelector('video');
+          if (vid) vid.poster = dataUrl;
+          if (!el._cardData.imgFull) el._cardData.imgFull = dataUrl;
+        });
+      }
       setTimeout(() => el.classList.add('visible'), Math.min(i * 8, 300));
     });
 
