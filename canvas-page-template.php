@@ -680,9 +680,8 @@ $site_name  = get_bloginfo( 'name' );
       }
     }
 
-    // Apply jitter (±14px organic variation) and rotation (±2°), record bounding box
+    // Apply jitter (±14px organic variation) and rotation (±2°)
     const jitter = 14;
-    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
     const placed = [];
 
     for (let i = 0; i < n; i++) {
@@ -692,11 +691,44 @@ $site_name  = get_bloginfo( 'name' );
       const y    = sl.y + (Math.random() * 2 - 1) * jitter;
       const rot  = (Math.random() * 2 - 1) * 2;
       const h    = totalCardH(item);
+      placed.push({ item, x, y, rot, h });
+    }
+
+    // Collision resolution: iteratively push overlapping cards apart (min 20px gap)
+    const MIN_GAP = 20;
+    for (let iter = 0; iter < 200; iter++) {
+      let moved = false;
+      for (let a = 0; a < n; a++) {
+        for (let b = a + 1; b < n; b++) {
+          const pa = placed[a], pb = placed[b];
+          const rawOx = Math.min(pa.x + W, pb.x + W) - Math.max(pa.x, pb.x);
+          const rawOy = Math.min(pa.y + pa.h, pb.y + pb.h) - Math.max(pa.y, pb.y);
+          const pushX = rawOx + MIN_GAP;
+          const pushY = rawOy + MIN_GAP;
+          if (pushX > 0 && pushY > 0) {
+            moved = true;
+            if (pushX <= pushY) {
+              const half = pushX / 2;
+              if (pa.x <= pb.x) { pa.x -= half; pb.x += half; }
+              else               { pa.x += half; pb.x -= half; }
+            } else {
+              const half = pushY / 2;
+              if (pa.y <= pb.y) { pa.y -= half; pb.y += half; }
+              else               { pa.y += half; pb.y -= half; }
+            }
+          }
+        }
+      }
+      if (!moved) break;
+    }
+
+    // Compute bounding box after resolution
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const { x, y, h } of placed) {
       minX = Math.min(minX, x);
       minY = Math.min(minY, y);
       maxX = Math.max(maxX, x + W);
       maxY = Math.max(maxY, y + h);
-      placed.push({ item, x, y, rot });
     }
 
     canvasW = Math.ceil(maxX - minX) + PAD * 2;
