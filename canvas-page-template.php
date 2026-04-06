@@ -147,6 +147,17 @@ $site_name  = get_bloginfo( 'name' );
       user-select: none;
     }
     #viewport.grabbing { cursor: grabbing; }
+    #viewport::after {
+      content: '';
+      position: fixed; inset: 0;
+      pointer-events: none;
+      background: radial-gradient(ellipse at center,
+        transparent 55%,
+        rgba(255,255,255,0.04) 78%,
+        rgba(255,255,255,0.10) 100%
+      );
+      z-index: 400;
+    }
 
     #canvas {
       position: absolute; top: 0; left: 0;
@@ -163,6 +174,7 @@ $site_name  = get_bloginfo( 'name' );
       border: 1px solid var(--border);
       opacity: 0;
       contain: layout style paint;
+      transform: rotate(var(--r, 0deg));
       transition: opacity 0.5s ease,
                   transform 0.18s ease,
                   box-shadow 0.18s ease,
@@ -170,7 +182,7 @@ $site_name  = get_bloginfo( 'name' );
     }
     .card.visible { opacity: 1; }
     .card:hover {
-      transform: translateY(-3px) scale(1.015);
+      transform: translateY(-3px) scale(1.015) rotate(var(--r, 0deg));
       box-shadow: 0 20px 60px rgba(0,0,0,0.75);
       border-color: var(--border-hover);
       z-index: 99 !important;
@@ -483,8 +495,10 @@ $site_name  = get_bloginfo( 'name' );
   const STRIDE   = W + GAP;
   const INFO_H   = 62;
   const FRICTION = 0.91;
-  const BUF_X    = 2;    // extra kolommen buiten viewport
-  const BUF_Y    = 500;  // extra pixels boven/onder viewport
+  const SPRING   = 0.12;
+  const R        = STRIDE * 1.5;   // base ring radius ≈ 412px
+
+  let canvasW = 0, canvasH = 0;
 
   const ACCENTS = [
     '#111827','#1a1a2e','#16213e','#0f3460',
@@ -497,35 +511,6 @@ $site_name  = get_bloginfo( 'name' );
     const d = document.createElement('div');
     d.textContent = String(str);
     return d.innerHTML;
-  }
-
-  // Bepaal welk WP-item op positie (col, row) hoort — herhaalt cyclisch
-  // Gebruik een per-(kolom, blok) geschudde volgorde zodat elk item
-  // precies één keer voorkomt vóór er herhaald wordt, en aangrenzende
-  // kolommen een andere volgorde krijgen (minder zichtbare herhaling).
-  function itemAtPos(col, row) {
-    const n = WP_ITEMS.length;
-    if (n === 1) return WP_ITEMS[0];
-    // Zet negatieve rijen om naar een apart bereik zodat ze niet botsen
-    const absRow = row >= 0 ? row : -row + 100000;
-    const block  = Math.floor(absRow / n);
-    const pos    = absRow % n;
-    // Seeded Fisher-Yates shuffle voor (col, block)
-    let s = ((col * 999983) ^ (block * 1234567) ^ 0xDEADBEEF) >>> 0;
-    const rng = () => { s = Math.imul(1664525, s) + 1013904223 | 0; return (s >>> 0) / 4294967296; };
-    const idx = Array.from({length: n}, (_, i) => i);
-    for (let i = n - 1; i > 0; i--) {
-      const j = Math.floor(rng() * (i + 1));
-      [idx[i], idx[j]] = [idx[j], idx[i]];
-    }
-    // Verschuif startpositie per kolom om horizontale herhaling te verminderen
-    return WP_ITEMS[ idx[ ((pos + col) % n + n) % n ] ];
-  }
-
-  // Seeded RNG voor de kolom-stagger
-  function seededRng(seed) {
-    let s = (seed ^ 0xDEADBEEF) >>> 0;
-    return () => { s = Math.imul(1664525, s) + 1013904223 | 0; return (s >>> 0) / 4294967296; };
   }
 
   function cardImgH(item) {
@@ -635,86 +620,75 @@ $site_name  = get_bloginfo( 'name' );
     canvas.style.transform = `translate(${ox}px,${oy}px)`;
   }
 
-  /* ── Oneindige kolommenstructuur ── */
-  // Elke kolom: { x, bottomY, topY, bi (volgende index omlaag), ti (volgende index omhoog) }
-  const cols = new Map();
-  let cardCounter = 0;
-
-  function getCol(ci) {
-    if ( ! cols.has(ci) ) {
-      const r       = seededRng(ci * 31337 + 7);
-      const stagger = Math.round( (r() * 2 - 1) * 140 );
-      cols.set(ci, { x: ci * STRIDE, bottomY: stagger, topY: stagger, bi: 0, ti: -1, els: [] });
-    }
-    return cols.get(ci);
-  }
-
   function playCardVideo(el) {
     const vid = el.querySelector('video');
     if (vid) vid.play().catch(function () {});
   }
 
-  function pushBottom(ci) {
-    const col  = getCol(ci);
-    const item = itemAtPos(ci, col.bi);
-    const h    = totalCardH(item);
-    const el   = buildCard(item);
-    el.style.cssText = `left:${col.x}px;top:${col.bottomY}px;width:${W}px;`;
-    canvas.appendChild(el);
-    playCardVideo(el);
-    col.els.push(el);
-    setTimeout( () => el.classList.add('visible'), Math.min(cardCounter++ * 8, 300) );
-    col.bottomY += h + GAP;
-    col.bi++;
+  /* ── Layout: organic scatter cluster ── */
+  function shuffle(arr) {
+    for (let i = arr.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [arr[i], arr[j]] = [arr[j], arr[i]];
+    }
+    return arr;
   }
 
-  function pushTop(ci) {
-    const col  = getCol(ci);
-    const item = itemAtPos(ci, col.ti);
-    const h    = totalCardH(item);
-    const top  = col.topY - h - GAP;
-    const el   = buildCard(item);
-    el.style.cssText = `left:${col.x}px;top:${top}px;width:${W}px;`;
-    canvas.appendChild(el);
-    playCardVideo(el);
-    col.els.push(el);
-    setTimeout( () => el.classList.add('visible'), Math.random() * 200 );
-    col.topY = top;
-    col.ti--;
-  }
+  function clamp(v, lo, hi) { return v < lo ? lo : v > hi ? hi : v; }
 
-  /* ── Cull kolommen die ver buiten het scherm vallen ── */
-  let cullTick = 0;
-  function maybeCull() {
-    if ( ++cullTick % 40 !== 0 ) return;   // elke ~40 fill-aanroepen
-    const vpW    = viewport.clientWidth;
-    const margin = (BUF_X + 3) * STRIDE;
-    const left   = -ox - margin;
-    const right  = -ox + vpW + margin;
-    for (const [ci, col] of cols) {
-      if (col.x + W < left || col.x > right) {
-        col.els.forEach(el => el.remove());
-        cols.delete(ci);
+  function layoutItems() {
+    const PAD   = 200;
+    const items = shuffle([...WP_ITEMS]);
+    const n     = items.length;
+
+    // Build ring slot positions (ring 0 = centre, ring k has k*6 slots at radius k*R)
+    const slots = [{ x: 0, y: 0 }];
+    for (let ring = 1; slots.length < n; ring++) {
+      const radius    = ring * R;
+      const slotCount = ring * 6;
+      for (let s = 0; s < slotCount && slots.length < n; s++) {
+        const angle = (2 * Math.PI * s) / slotCount;
+        slots.push({ x: Math.cos(angle) * radius, y: Math.sin(angle) * radius });
       }
     }
-  }
 
-  function fill() {
-    const vpW    = viewport.clientWidth;
-    const vpH    = viewport.clientHeight;
-    const left   = -ox - BUF_X * STRIDE;
-    const right  = -ox + vpW + BUF_X * STRIDE;
-    const top    = -oy - BUF_Y;
-    const bottom = -oy + vpH + BUF_Y;
-    const ci0    = Math.floor( left  / STRIDE );
-    const ci1    = Math.ceil ( right / STRIDE );
+    // Apply jitter (±20% of R) and rotation (±2°), record bounding box
+    const jitter = R * 0.2;
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    const placed = [];
 
-    for ( let ci = ci0; ci <= ci1; ci++ ) {
-      const col = getCol(ci);
-      while ( col.bottomY < bottom ) pushBottom(ci);
-      while ( col.topY    > top    ) pushTop(ci);
+    for (let i = 0; i < n; i++) {
+      const item = items[i];
+      const sl   = slots[i];
+      const x    = sl.x + (Math.random() * 2 - 1) * jitter;
+      const y    = sl.y + (Math.random() * 2 - 1) * jitter;
+      const rot  = (Math.random() * 2 - 1) * 2;
+      const h    = totalCardH(item);
+      minX = Math.min(minX, x);
+      minY = Math.min(minY, y);
+      maxX = Math.max(maxX, x + W);
+      maxY = Math.max(maxY, y + h);
+      placed.push({ item, x, y, rot });
     }
-    maybeCull();
+
+    canvasW = Math.ceil(maxX - minX) + PAD * 2;
+    canvasH = Math.ceil(maxY - minY) + PAD * 2;
+    canvas.style.width  = canvasW + 'px';
+    canvas.style.height = canvasH + 'px';
+
+    placed.forEach(({ item, x, y, rot }, i) => {
+      const el = buildCard(item);
+      const cx = Math.round(x - minX + PAD);
+      const cy = Math.round(y - minY + PAD);
+      el.style.cssText = `left:${cx}px;top:${cy}px;width:${W}px;--r:${rot.toFixed(2)}deg;`;
+      canvas.appendChild(el);
+      playCardVideo(el);
+      setTimeout(() => el.classList.add('visible'), Math.min(i * 8, 300));
+    });
+
+    ox = Math.round((viewport.clientWidth  - canvasW) / 2);
+    oy = Math.round((viewport.clientHeight - canvasH) / 2);
+    applyTransform();
   }
 
   /* ── Overlay ── */
@@ -856,7 +830,6 @@ $site_name  = get_bloginfo( 'name' );
     ox = ox0 + (e.clientX - mx0);
     oy = oy0 + (e.clientY - my0);
     applyTransform();
-    fill();
   });
 
   window.addEventListener('mouseup', e => {
@@ -893,7 +866,6 @@ $site_name  = get_bloginfo( 'name' );
     ox = ox0 + (t.clientX - touch0.clientX);
     oy = oy0 + (t.clientY - touch0.clientY);
     applyTransform();
-    fill();
   }, { passive: true });
 
   viewport.addEventListener('touchend', () => {
@@ -905,7 +877,6 @@ $site_name  = get_bloginfo( 'name' );
   let wheelRaf = 0;
   viewport.addEventListener('wheel', e => {
     e.preventDefault();
-    cancelAnimationFrame(raf);
     let dx = e.deltaX;
     let dy = e.deltaY;
     if (e.deltaMode === 1) { dx *= 20; dy *= 20; }
@@ -914,22 +885,31 @@ $site_name  = get_bloginfo( 'name' );
     oy -= dy;
     applyTransform();
     dismissHint();
-    // Throttle fill() via rAF — voorkomt onnodige DOM-mutaties bij snel scrollen
+    // Trigger spring correction after scroll settles
     if ( ! wheelRaf ) {
-      wheelRaf = requestAnimationFrame(() => { wheelRaf = 0; fill(); });
+      wheelRaf = requestAnimationFrame(() => { wheelRaf = 0; vx = 0; vy = 0; momentum(); });
     }
   }, { passive: false });
 
-  /* ── Momentum ── */
+  /* ── Momentum + spring bounce ── */
   function momentum() {
     cancelAnimationFrame(raf);
     (function step() {
       vx *= FRICTION; vy *= FRICTION;
-      if ( Math.abs(vx) < 0.08 && Math.abs(vy) < 0.08 ) return;
       ox += vx; oy += vy;
+
+      const bMinX = viewport.clientWidth  - canvasW;
+      const bMinY = viewport.clientHeight - canvasH;
+      const tx = clamp(ox, bMinX, 0);
+      const ty = clamp(oy, bMinY, 0);
+      ox += (tx - ox) * SPRING;
+      oy += (ty - oy) * SPRING;
+
       applyTransform();
-      fill();
-      raf = requestAnimationFrame(step);
+
+      const atRest = Math.abs(vx) < 0.08 && Math.abs(vy) < 0.08
+                  && Math.abs(ox - tx) < 0.5 && Math.abs(oy - ty) < 0.5;
+      if (!atRest) raf = requestAnimationFrame(step);
     })();
   }
 
@@ -950,7 +930,6 @@ $site_name  = get_bloginfo( 'name' );
     ox += moves[e.key][0];
     oy += moves[e.key][1];
     applyTransform();
-    fill();
     momentum();
     dismissHint();
   });
@@ -965,10 +944,7 @@ $site_name  = get_bloginfo( 'name' );
   setTimeout(dismissHint, 6000);
 
   /* ── Init ── */
-  ox = Math.round( window.innerWidth  / 2 - W / 2 );
-  oy = Math.round( window.innerHeight / 2 - 200 );
-  applyTransform();
-  fill();
+  layoutItems();
 
   /* ── Deep-link: open overlay for #item-{id} ── */
   (function () {
@@ -991,7 +967,6 @@ $site_name  = get_bloginfo( 'name' );
     });
   })();
 
-  window.addEventListener('resize', fill);
 
 })();
 </script>
