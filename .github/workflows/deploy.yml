@@ -13,9 +13,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install lftp
-        run: sudo apt-get install -y lftp
-
       - name: Setup SSH
         run: |
           mkdir -p ~/.ssh
@@ -24,34 +21,43 @@ jobs:
           ssh-keyscan -H ${{ secrets.VPS_HOST }} >> ~/.ssh/known_hosts
           chmod 644 ~/.ssh/known_hosts
 
-      - name: Deploy via lftp
+      - name: Deploy via tar pipe (atomic swap)
         run: |
-          lftp -c "
-            set sftp:connect-program 'ssh -i $HOME/.ssh/deploy_key -o UserKnownHostsFile=$HOME/.ssh/known_hosts';
-            open sftp://${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }};
-            mirror --reverse --delete --verbose \
-              --exclude '\.git/' \
-              --exclude '\.github/' \
-              --exclude '\.gitignore' \
-              --exclude 'node_modules/' \
-              --exclude 'tests/' \
-              --exclude 'test/' \
-              --exclude '\.env' \
-              --exclude '.*\.log' \
-              --exclude '\.DS_Store' \
-              --exclude 'Thumbs\.db' \
-              --exclude '\.editorconfig' \
-              --exclude 'phpcs\.xml' \
-              --exclude 'phpunit\.xml' \
-              --exclude 'composer\.json' \
-              --exclude 'composer\.lock' \
-              --exclude 'package\.json' \
-              --exclude 'package-lock\.json' \
-              --exclude 'webpack\.config\.' \
-              --exclude 'README\.md' \
-              --exclude 'CHANGELOG\.md' \
-              ./ ${{ secrets.DEPLOY_PATH }}/
-          "
+          tar czf - \
+            --exclude='.git' \
+            --exclude='.github' \
+            --exclude='.gitignore' \
+            --exclude='.rsyncignore' \
+            --exclude='node_modules' \
+            --exclude='tests' \
+            --exclude='test' \
+            --exclude='.env' \
+            --exclude='*.log' \
+            --exclude='.DS_Store' \
+            --exclude='Thumbs.db' \
+            --exclude='.editorconfig' \
+            --exclude='phpcs.xml*' \
+            --exclude='phpunit.xml*' \
+            --exclude='composer.json' \
+            --exclude='composer.lock' \
+            --exclude='package.json' \
+            --exclude='package-lock.json' \
+            --exclude='webpack.config.*' \
+            --exclude='README.md' \
+            --exclude='CHANGELOG.md' \
+            . | ssh -i ~/.ssh/deploy_key \
+                -o StrictHostKeyChecking=no \
+                ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} \
+                "set -e
+                 DEPLOY=${{ secrets.DEPLOY_PATH }}
+                 TMP=\${DEPLOY}.deploying
+                 rm -rf \$TMP
+                 mkdir -p \$TMP
+                 tar xzf - -C \$TMP
+                 rm -rf \${DEPLOY}.old
+                 mv \$DEPLOY \${DEPLOY}.old
+                 mv \$TMP \$DEPLOY
+                 rm -rf \${DEPLOY}.old"
 
       - name: Cleanup SSH key
         if: always()
