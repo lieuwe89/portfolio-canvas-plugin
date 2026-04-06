@@ -745,14 +745,14 @@ $site_name  = get_bloginfo( 'name' );
       playCardVideo(el);
       // Auto-thumbnail for direct-video cards without a featured image
       if (!item.img && isDirectVideo(item.video)) {
-        captureVideoFirstFrame(item.video, function(dataUrl, vw, vh) {
+        captureVideoFirstFrame(item.video, function(dataUrl) {
           if (!dataUrl) return;
           const vid = el.querySelector('video');
           if (vid) {
-            const imgH = (vw && vh) ? Math.max(Math.round(W * vh / vw), 150) : 200;
-            vid.style.height = imgH + 'px';
             vid.poster = dataUrl;
-            el.classList.remove('card-direct-video');
+            // Keep the 200px height used by collision resolution; switch to
+            // cover so the poster thumbnail fills the box without resizing the card.
+            el.classList.remove('card-direct-video'); // contain → cover
           }
           if (!el._cardData.imgFull) el._cardData.imgFull = dataUrl;
         });
