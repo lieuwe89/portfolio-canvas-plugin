@@ -386,9 +386,11 @@ $site_name  = get_bloginfo( 'name' );
     }
     .logo { font-size: 14px; font-weight: 600; letter-spacing: -0.025em; color: rgba(255,255,255,0.88); }
     .subline { font-size: 11px; color: rgba(255,255,255,0.28); margin-top: 3px; }
-    .nav { display: flex; gap: 18px; pointer-events: all; }
+    .nav { display: flex; gap: 18px; pointer-events: all; align-items: center; }
     .nav a { font-size: 12px; color: rgba(255,255,255,0.35); text-decoration: none; transition: color 0.2s; }
     .nav a:hover { color: rgba(255,255,255,0.75); }
+    .nav a:first-child { font-size: 14px; font-weight: 600; color: rgba(255,255,255,0.75); letter-spacing: -0.01em; }
+    .nav a:first-child:hover { color: rgba(255,255,255,1); }
     .logo-link {
       text-decoration: none;
       color: inherit;
