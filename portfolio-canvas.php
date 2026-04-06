@@ -2,13 +2,13 @@
 /**
  * Plugin Name: Portfolio Canvas
  * Description: Infinite-pan portfolio canvas. Add items via Portfolio → Add New in the admin, then set any Page's template to "Portfolio Canvas".
- * Version:     2.0.3
+ * Version:     2.1.0
  * License:     GPL-2.0+
  */
 
 defined( 'ABSPATH' ) || exit;
 
-define( 'PORTFOLIO_CANVAS_VERSION', '2.0.3' );
+define( 'PORTFOLIO_CANVAS_VERSION', '2.1.0' );
 define( 'PORTFOLIO_CANVAS_GITHUB_REPO', 'lieuwe89/portfolio-canvas-plugin' );
 
 /* ── Auto-updater via GitHub Releases ───────────────── */
@@ -125,7 +125,7 @@ function portfolio_canvas_video_thumbnail( $url ) {
         return $thumb;
     }
 
-    return ''; // directe videobestanden: geen auto-thumbnail
+    return ''; // directe videobestanden: thumbnail wordt client-side gegenereerd via captureVideoFirstFrame
 }
 
 /* ── Instellingenpagina ──────────────────────────── */

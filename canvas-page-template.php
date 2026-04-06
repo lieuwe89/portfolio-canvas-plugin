@@ -543,9 +543,9 @@ $site_name  = get_bloginfo( 'name' );
         c.width   = v.videoWidth  || 480;
         c.height  = v.videoHeight || 360;
         c.getContext('2d').drawImage(v, 0, 0, c.width, c.height);
-        callback(c.toDataURL('image/jpeg', 0.75));
+        callback(c.toDataURL('image/jpeg', 0.75), c.width, c.height);
       } catch (e) {
-        callback(null); // cross-origin or other error — silently skip
+        callback(null, 0, 0); // cross-origin or other error — silently skip
       }
     });
     v.addEventListener('error', function() { callback(null); });
@@ -743,12 +743,17 @@ $site_name  = get_bloginfo( 'name' );
       el.style.cssText = `left:${cx}px;top:${cy}px;width:${W}px;--r:${rot.toFixed(2)}deg;`;
       canvas.appendChild(el);
       playCardVideo(el);
-      // Restore first-frame cover for direct-video cards without a featured image
+      // Auto-thumbnail for direct-video cards without a featured image
       if (!item.img && isDirectVideo(item.video)) {
-        captureVideoFirstFrame(item.video, function(dataUrl) {
+        captureVideoFirstFrame(item.video, function(dataUrl, vw, vh) {
           if (!dataUrl) return;
           const vid = el.querySelector('video');
-          if (vid) vid.poster = dataUrl;
+          if (vid) {
+            const imgH = (vw && vh) ? Math.max(Math.round(W * vh / vw), 150) : 200;
+            vid.style.height = imgH + 'px';
+            vid.poster = dataUrl;
+            el.classList.remove('card-direct-video');
+          }
           if (!el._cardData.imgFull) el._cardData.imgFull = dataUrl;
         });
       }
