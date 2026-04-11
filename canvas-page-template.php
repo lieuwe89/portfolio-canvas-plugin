@@ -188,12 +188,19 @@ $site_name  = get_bloginfo( 'name' );
       z-index: 99 !important;
       cursor: pointer;
     }
-    .card-img img, .card-img video {
+    .card-img img {
       display: block; width: 100%;
       background: #1e1e1e;
       pointer-events: none;
       -webkit-user-drag: none;
       object-fit: cover;
+    }
+    .card-img video {
+      display: block; width: 100%;
+      background: #1e1e1e;
+      pointer-events: none;
+      -webkit-user-drag: none;
+      object-fit: contain;
     }
     .card-direct-video video {
       object-fit: contain;
@@ -273,10 +280,15 @@ $site_name  = get_bloginfo( 'name' );
       aspect-ratio: 16 / 9;
       background: #000;
     }
-    #overlay-video iframe,
-    #overlay-video video {
+    #overlay-video iframe {
       width: 100%; height: 100%;
       display: block; border: none;
+    }
+    #overlay-video video {
+      width: 100%; height: auto;
+      max-height: 80vh;
+      display: block; border: none;
+      margin: 0 auto;
     }
 
     /* ── Galerij in overlay ── */
@@ -750,9 +762,7 @@ $site_name  = get_bloginfo( 'name' );
           const vid = el.querySelector('video');
           if (vid) {
             vid.poster = dataUrl;
-            // Keep the 200px height used by collision resolution; switch to
-            // cover so the poster thumbnail fills the box without resizing the card.
-            el.classList.remove('card-direct-video'); // contain → cover
+            // Keep the 200px height used by collision resolution.
           }
           if (!el._cardData.imgFull) el._cardData.imgFull = dataUrl;
         });
@@ -810,7 +820,7 @@ $site_name  = get_bloginfo( 'name' );
                       style="width:100%;height:100%;border:none"></iframe>`;
     }
     // Directe videobestand (mp4, webm, etc.)
-    return `<video src="${esc(url)}" controls autoplay playsinline></video>`;
+    return `<video src="${esc(url)}" controls autoplay playsinline style="width:100%;height:auto;display:block"></video>`;
   }
 
   // Bepaal of een URL een Instagram-post is
@@ -829,8 +839,11 @@ $site_name  = get_bloginfo( 'name' );
     if (d.video) {
       // Video (YouTube / Vimeo / Instagram / directe mp4)
       overlayVideo.innerHTML = videoEmbedHtml(d.video);
-      overlayVideo.style.aspectRatio = isInstagramUrl(d.video) ? 'unset' : '16 / 9';
-      overlayVideo.style.minHeight   = isInstagramUrl(d.video) ? '540px'  : 'unset';
+      const isInstagram = isInstagramUrl(d.video);
+      const isDirect    = isDirectVideo(d.video);
+
+      overlayVideo.style.aspectRatio = (isInstagram || isDirect) ? 'unset' : '16 / 9';
+      overlayVideo.style.minHeight   = isInstagram ? '540px' : 'unset';
       overlayVideo.style.display     = 'block';
     } else {
       // Bouw lijst van alle afbeeldingen: featured + galerij
