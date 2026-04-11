@@ -534,7 +534,7 @@ $site_name  = get_bloginfo( 'name' );
 
   function totalCardH(item) {
     if (item.img) return cardImgH(item) + INFO_H;
-    if (!item.img && isDirectVideo(item.video)) return 200 + INFO_H;
+    if (isDirectVideo(item.video)) return cardImgH(item) + INFO_H;
     return 160;
   }
 
@@ -592,7 +592,7 @@ $site_name  = get_bloginfo( 'name' );
     } else if (isDirectVideo(item.video)) {
       el.className = 'card card-img card-direct-video';
       el.innerHTML =
-        `<video src="${esc(item.video)}" style="height:200px" autoplay muted loop playsinline draggable="false"></video>
+        `<video src="${esc(item.video)}" style="height:${imgH}px" autoplay muted loop playsinline draggable="false"></video>
          <div class="card-info">
            <div class="meta-row">
              <span class="cat">${esc(item.cat)}</span>
@@ -676,10 +676,30 @@ $site_name  = get_bloginfo( 'name' );
 
   function clamp(v, lo, hi) { return v < lo ? lo : v > hi ? hi : v; }
 
-  function layoutItems() {
+  async function layoutItems() {
     const PAD   = 200;
     const items = shuffle([...WP_ITEMS]);
     const n     = items.length;
+
+    // Prefetch video metadata for items without images
+    await Promise.all(items.map(item => {
+      if (!item.img && isDirectVideo(item.video)) {
+        return new Promise(resolve => {
+          const v = document.createElement('video');
+          v.preload = 'metadata';
+          v.src = item.video;
+          v.onloadedmetadata = () => {
+            item.imgW = v.videoWidth;
+            item.imgH = v.videoHeight;
+            resolve();
+          };
+          v.onerror = () => resolve();
+          // Timeout after 2s to prevent hanging
+          setTimeout(resolve, 2000);
+        });
+      }
+      return Promise.resolve();
+    }));
 
     // Build ring slot positions (ring 0 = centre, ring k has k*6 slots at radius k*R)
     const slots = [{ x: 0, y: 0 }];
@@ -1031,28 +1051,28 @@ $site_name  = get_bloginfo( 'name' );
   setTimeout(dismissHint, 6000);
 
   /* ── Init ── */
-  layoutItems();
-
-  /* ── Deep-link: open overlay for #item-{id} ── */
-  (function () {
-    const m = window.location.hash.match(/^#item-(\d+)$/);
-    if ( ! m ) return;
-    const targetId = parseInt(m[1], 10);
-    const item = WP_ITEMS.find(function (i) { return i.id === targetId; });
-    if ( ! item ) return;
-    openOverlay({
-      id:      item.id,
-      type:    item.img ? 'img' : 'colour',
-      title:   item.title,
-      desc:    item.desc,
-      cat:     item.cat,
-      year:    item.year,
-      imgFull: item.imgFull || item.img,
-      accent:  ACCENTS[ item.id % ACCENTS.length ],
-      video:   item.video || '',
-      gallery: item.gallery || [],
-    });
-  })();
+  layoutItems().then(() => {
+    /* ── Deep-link: open overlay for #item-{id} ── */
+    (function () {
+      const m = window.location.hash.match(/^#item-(\d+)$/);
+      if ( ! m ) return;
+      const targetId = parseInt(m[1], 10);
+      const item = WP_ITEMS.find(function (i) { return i.id === targetId; });
+      if ( ! item ) return;
+      openOverlay({
+        id:      item.id,
+        type:    item.img ? 'img' : 'colour',
+        title:   item.title,
+        desc:    item.desc,
+        cat:     item.cat,
+        year:    item.year,
+        imgFull: item.imgFull || item.img,
+        accent:  ACCENTS[ item.id % ACCENTS.length ],
+        video:   item.video || '',
+        gallery: item.gallery || [],
+      });
+    })();
+  });
 
 
 })();
